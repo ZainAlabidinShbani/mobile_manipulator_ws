@@ -88,11 +88,12 @@ Should list `husky_description`, `ur_description`, `moveit`-related packages, an
 **Deliverables:**
 ```
 ~/mobile_manipulator_ws/src/
-├── husky_ur5_description/     (ament_cmake)
-├── husky_ur5_moveit_config/    (ament_cmake, populated by MoveIt Setup Assistant in Phase 5)
-├── husky_ur5_bringup/           (ament_cmake — holds the master launch file + worlds)
-├── husky_ur5_perception/         (ament_python — yolo_perception_node.py)
-└── husky_ur5_orchestrator/        (ament_python — warehouse_orchestrator.py)
+├── mobile_manipulator_description/   (ament_cmake — URDF/Xacro, Phase 2)
+├── mobile_manipulator_gazebo/         (ament_cmake — Gazebo world + spawn, Phase 4)
+├── mobile_manipulator_navigation/     (ament_cmake — Nav2 params + master launch, Phases 6/9/10)
+├── mobile_manipulator_moveit_config/  (ament_cmake — MoveIt Setup Assistant output, Phase 5)
+├── mobile_manipulator_perception/     (ament_python — perception_node.py, Phase 7)
+└── mobile_manipulator_orchestrator/   (ament_python — orchestrator_node.py, Phase 8)
 ```
 
 **Test / gate:**
@@ -529,7 +530,7 @@ cycles complete, reporting the per-cycle summary for all 5.
 ## 14. Quick-reference checklist
 
 - [ ] Preflight deps installed, confirmed with `ros2 pkg list`
-- [ ] Phase 1 — 5 packages build clean
+- [x] Phase 1 — 5 packages build clean
 - [ ] Phase 2 — URDF parses, RViz shows correct assembled robot
 - [ ] Phase 3 — all controllers `active` on mock hardware
 - [ ] Phase 4 — Gazebo RTF > 0.7, robot stable on spawn

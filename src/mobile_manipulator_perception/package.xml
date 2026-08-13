@@ -1,0 +1,30 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>mobile_manipulator_perception</name>
+  <version>0.0.0</version>
+  <description>
+    YOLOv8 perception node for the mobile manipulator.
+    Subscribes to RealSense D435i RGB+depth streams, runs Ultralytics
+    YOLOv8 inference, and broadcasts an object_target_frame TF for the
+    orchestrator. Populated in Phase 7.
+  </description>
+  <maintainer email="zain.alabidin.shbani@gmail.com">zsh</maintainer>
+  <license>Apache-2.0</license>
+
+  <buildtool_depend>ament_python</buildtool_depend>
+
+  <depend>rclpy</depend>
+  <depend>sensor_msgs</depend>
+  <depend>geometry_msgs</depend>
+  <depend>tf2_ros</depend>
+
+  <test_depend>ament_copyright</test_depend>
+  <test_depend>ament_flake8</test_depend>
+  <test_depend>ament_pep257</test_depend>
+  <test_depend>python3-pytest</test_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>
