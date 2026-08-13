@@ -1,0 +1,10 @@
+# Initial joint positions for the UR5 arm (used in simulation / fake hardware)
+# All joints at zero = arm pointing straight up, safe home pose.
+# Phase 3 will reference this file via ros2_control tag.
+initial_positions:
+  shoulder_pan_joint:  0.0
+  shoulder_lift_joint: -1.5707963
+  elbow_joint:          1.5707963
+  wrist_1_joint:       -1.5707963
+  wrist_2_joint:        0.0
+  wrist_3_joint:        0.0

@@ -2,16 +2,38 @@
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
   <name>mobile_manipulator_description</name>
-  <version>0.0.0</version>
+  <version>0.1.0</version>
   <description>
     URDF/Xacro robot description for the mobile manipulator system.
-    Composes a Husky-style base with a UR5 arm, Robotiq 2F-85 gripper,
-    and RealSense D435i wrist-mounted camera. Populated in Phase 2.
+    Composes vendor packages: husky_description (mobile base),
+    ur_description (UR5 arm), robotiq_description (2F-85 gripper),
+    and realsense2_description (D435i wrist camera). Phase 2 deliverable.
   </description>
   <maintainer email="zain.alabidin.shbani@gmail.com">zsh</maintainer>
   <license>Apache-2.0</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <!-- Xacro processing -->
+  <exec_depend>xacro</exec_depend>
+
+  <!-- Vendor base description (cloned in src/) -->
+  <exec_depend>husky_description</exec_depend>
+
+  <!-- Vendor arm description (apt: ros-humble-ur-description) -->
+  <exec_depend>ur_description</exec_depend>
+
+  <!-- Vendor gripper description (apt: ros-humble-robotiq-description) -->
+  <exec_depend>robotiq_description</exec_depend>
+
+  <!-- Vendor camera description (apt: ros-humble-realsense2-description) -->
+  <exec_depend>realsense2_description</exec_depend>
+
+  <!-- Launch dependencies -->
+  <exec_depend>robot_state_publisher</exec_depend>
+  <exec_depend>joint_state_publisher_gui</exec_depend>
+  <exec_depend>rviz2</exec_depend>
+  <exec_depend>launch_ros</exec_depend>
 
   <test_depend>ament_lint_auto</test_depend>
   <test_depend>ament_lint_common</test_depend>

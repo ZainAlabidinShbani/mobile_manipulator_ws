@@ -6,9 +6,16 @@ if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
 endif()
 
 find_package(ament_cmake REQUIRED)
+find_package(xacro REQUIRED)
 
-# Phase 2 will install: urdf/ config/ launch/
-install(DIRECTORY DESTINATION share/${PROJECT_NAME})
+# Install URDF/Xacro files, config, and launch files
+install(
+  DIRECTORY
+    urdf
+    config
+    launch
+  DESTINATION share/${PROJECT_NAME}/
+)
 
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)

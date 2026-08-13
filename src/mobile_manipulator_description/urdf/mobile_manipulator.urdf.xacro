@@ -1,0 +1,150 @@
+<?xml version="1.0"?>
+<!--
+  mobile_manipulator.urdf.xacro
+  ─────────────────────────────────────────────────────────────────────────────
+  Top-level robot description for the mobile manipulator system.
+  Composes (does NOT reimplement) four vendor packages:
+
+    1. husky_description        (src/husky_description  — community Humble port)
+       → mobile base: base_link, base_footprint, wheels, top_plate_link
+    2. ur_description           (apt: ros-humble-ur-description)
+       → UR5 arm: shoulder_pan_joint … wrist_3_joint, tool0
+    3. robotiq_description      (apt: ros-humble-robotiq-description)
+       → Robotiq 2F-85 gripper via ur_to_robotiq adapter + robotiq_gripper macro
+    4. realsense2_description   (apt: ros-humble-realsense2-description)
+       → RealSense D435i at wrist: camera_link, camera_color_optical_frame (REP-103)
+
+  Attachment chain:
+    base_footprint
+      └─ base_link                     (husky_description)
+           └─ top_plate_link           (husky_description decorations)
+                └─ arm_mounting_plate  (our arm_mount.xacro)
+                     └─ arm_base_link  (ur_description ur_robot → "${arm_prefix}base_link")
+                          └─ … UR5 joints …
+                               └─ tool0
+                                    └─ ur_to_robotiq_link   (robotiq_description adapter)
+                                         └─ gripper_mount_link
+                                              └─ robotiq_85_base_link  (robotiq_gripper macro)
+                                         └─ camera_bracket_link  (our d435i_wrist_mount.xacro)
+                                              └─ camera_link / camera_color_optical_frame
+
+  Naming policy:
+    - No "husky" in any identifier we author; vendor names are referenced but not redefined.
+    - arm_prefix="" → UR5 links named shoulder_pan_link, wrist_3_link, tool0, etc.
+    - gripper_prefix="gripper_"
+    - camera_name="camera"  → camera_link, camera_color_optical_frame (REP-103)
+  ─────────────────────────────────────────────────────────────────────────────
+-->
+<robot name="mobile_manipulator" xmlns:xacro="http://wiki.ros.org/xacro">
+
+  <!-- ══════════════════════════════════════════════════════════════
+       ARGUMENTS
+       ══════════════════════════════════════════════════════════════ -->
+  <!-- UR5 tf prefix — MUST be non-empty to avoid collision with husky's base_link -->
+  <xacro:arg name="arm_prefix"       default="arm_"/>
+  <!-- Gripper tf prefix -->
+  <xacro:arg name="gripper_prefix"   default="gripper_"/>
+  <!-- Camera base name -->
+  <xacro:arg name="camera_name"      default="camera"/>
+
+  <!-- Suppress husky's decorative sensor arch (we mount the arm there instead) -->
+  <xacro:arg name="sensor_arch"      default="0"/>
+  <xacro:arg name="sensor_arch_height" default="510"/>
+  <xacro:arg name="sensor_arch_xyz"  default="0 0 0"/>
+  <xacro:arg name="sensor_arch_rpy"  default="0 0 0"/>
+  <xacro:arg name="robot_namespace"  default="/"/>
+
+  <!-- ══════════════════════════════════════════════════════════════
+       PROPERTIES  (convenience)
+       ══════════════════════════════════════════════════════════════ -->
+  <xacro:property name="arm_prefix"     value="$(arg arm_prefix)"/>
+  <xacro:property name="gripper_prefix" value="$(arg gripper_prefix)"/>
+  <xacro:property name="camera_name"    value="$(arg camera_name)"/>
+
+  <!-- ──────────────────────────────────────────────────────────────
+       1. MOBILE BASE  (husky_description — vendor, no modifications)
+       ────────────────────────────────────────────────────────────── -->
+  <xacro:include filename="$(find husky_description)/urdf/husky.urdf.xacro"/>
+
+  <!-- ──────────────────────────────────────────────────────────────
+       2. ARM MOUNTING PLATE  (our macro)
+       Bridges top_plate_link → arm_mounting_plate → UR5 base_link
+       The plate is centred on the top-plate footprint (x=0.0, y=0.0)
+       and sits flush on top (z=0.0 above top_plate_link surface).
+       ────────────────────────────────────────────────────────────── -->
+  <xacro:include filename="$(find mobile_manipulator_description)/urdf/arm_mount.xacro"/>
+
+  <xacro:arm_mount_plate
+      parent="top_plate_link"
+      xyz="0.0 0.0 0.008"
+      rpy="0.0 0.0 0.0"
+      arm_prefix="${arm_prefix}"/>
+
+  <!-- ──────────────────────────────────────────────────────────────
+       3. UR5 ARM  (ur_description — vendor macro ur_robot)
+       We set generate_ros2_control_tag:=false here because Phase 3
+       will add the proper ros2_control block in a separate xacro.
+       ────────────────────────────────────────────────────────────── -->
+  <xacro:include filename="$(find ur_description)/urdf/ur_macro.xacro"/>
+
+  <xacro:ur_robot
+      name="ur5_arm"
+      tf_prefix="${arm_prefix}"
+      parent="arm_mounting_plate"
+      joint_limits_parameters_file="$(find ur_description)/config/ur5/joint_limits.yaml"
+      kinematics_parameters_file="$(find ur_description)/config/ur5/default_kinematics.yaml"
+      physical_parameters_file="$(find ur_description)/config/ur5/physical_parameters.yaml"
+      visual_parameters_file="$(find ur_description)/config/ur5/visual_parameters.yaml"
+      ur_type="ur5"
+      generate_ros2_control_tag="false"
+      use_fake_hardware="false"
+      sim_gazebo="false"
+      sim_ignition="false">
+    <!-- arm sits directly on mounting plate centre, no additional offset -->
+    <origin xyz="0.0 0.0 0.010" rpy="0.0 0.0 0.0"/>
+  </xacro:ur_robot>
+
+  <!-- ──────────────────────────────────────────────────────────────
+       4. UR → ROBOTIQ ADAPTER  (robotiq_description vendor macro)
+       Connects tool0 to the adapter link, then to gripper_mount_link.
+       ────────────────────────────────────────────────────────────── -->
+  <xacro:include filename="$(find robotiq_description)/urdf/ur_to_robotiq_adapter.urdf.xacro"/>
+
+  <xacro:ur_to_robotiq
+      prefix="${gripper_prefix}"
+      connected_to="${arm_prefix}tool0"
+      rotation="0.0"/>
+
+  <!-- ──────────────────────────────────────────────────────────────
+       5. ROBOTIQ 2F-85 GRIPPER  (robotiq_description vendor macro)
+       Parent is gripper_mount_link produced by the adapter above.
+       include_ros2_control:=false — Phase 3 adds it.
+       ────────────────────────────────────────────────────────────── -->
+  <xacro:include filename="$(find robotiq_description)/urdf/robotiq_2f_85_macro.urdf.xacro"/>
+
+  <xacro:robotiq_gripper
+      name="gripper"
+      prefix="${gripper_prefix}"
+      parent="${gripper_prefix}gripper_mount_link"
+      include_ros2_control="false"
+      use_fake_hardware="false"
+      sim_ignition="false"
+      sim_isaac="false">
+    <origin xyz="0.0 0.0 0.0" rpy="0.0 0.0 0.0"/>
+  </xacro:robotiq_gripper>
+
+  <!-- ──────────────────────────────────────────────────────────────
+       6. REALSENSE D435i AT WRIST  (our macro + realsense2_description)
+       Mounted on a bracket off tool0, angled -30° about Y so the lens
+       faces forward-and-down for a tabletop pick-and-place view.
+       Publishes:  camera_link, camera_color_optical_frame  (REP-103)
+       ────────────────────────────────────────────────────────────── -->
+  <xacro:include filename="$(find mobile_manipulator_description)/urdf/d435i_wrist_mount.xacro"/>
+
+  <xacro:d435i_wrist_mount
+      parent="${arm_prefix}tool0"
+      camera_name="${camera_name}"
+      xyz="0.05 0.0 0.04"
+      rpy="0.0 -0.5236 0.0"/>
+
+</robot>

@@ -1,0 +1,65 @@
+<?xml version="1.0"?>
+<!--
+  arm_mount.xacro
+  Mounting plate macro that bridges the mobile base top_plate_link to
+  the UR5 arm base_link. Authored for mobile_manipulator_description.
+  No "husky" naming used here — vendor link names (top_plate_link, base_link)
+  appear only as parent/child references, never as our own link names.
+-->
+<robot xmlns:xacro="http://wiki.ros.org/xacro">
+
+  <!--
+    xacro:macro  arm_mount_plate
+    Inserts a thin aluminium mounting plate between the mobile base top plate
+    and the UR5 arm. The plate origin coincides with the UR5 base_link origin
+    (i.e. the arm sits directly on the plate with no extra offset).
+
+    Parameters
+      parent          : parent link name (typically top_plate_link from the base)
+      xyz             : translation from parent to plate centre (default: arm centred over footprint)
+      rpy             : rotation from parent to plate (default: identity)
+      arm_prefix      : tf_prefix passed through to the ur_robot macro (default: "")
+  -->
+  <xacro:macro name="arm_mount_plate"
+               params="parent
+                       xyz:='0.0 0.0 0.0'
+                       rpy:='0.0 0.0 0.0'
+                       arm_prefix:=''">
+
+    <!-- Mounting plate link: a thin square aluminium plate -->
+    <link name="arm_mounting_plate">
+      <visual>
+        <origin xyz="0 0 -0.005" rpy="0 0 0"/>
+        <geometry>
+          <box size="0.25 0.25 0.010"/>
+        </geometry>
+        <material name="arm_mount_aluminum">
+          <color rgba="0.7 0.7 0.75 1.0"/>
+        </material>
+      </visual>
+      <collision>
+        <origin xyz="0 0 -0.005" rpy="0 0 0"/>
+        <geometry>
+          <box size="0.25 0.25 0.010"/>
+        </geometry>
+      </collision>
+      <inertial>
+        <!-- ~1 kg aluminium plate -->
+        <mass value="1.0"/>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <inertia ixx="0.005208" ixy="0.0" ixz="0.0"
+                 iyy="0.005208" iyz="0.0"
+                 izz="0.010417"/>
+      </inertial>
+    </link>
+
+    <!-- Joint: base top_plate_link → arm_mounting_plate -->
+    <joint name="arm_mount_joint" type="fixed">
+      <parent link="${parent}"/>
+      <child  link="arm_mounting_plate"/>
+      <origin xyz="${xyz}" rpy="${rpy}"/>
+    </joint>
+
+  </xacro:macro>
+
+</robot>
