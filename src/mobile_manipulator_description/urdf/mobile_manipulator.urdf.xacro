@@ -134,6 +134,18 @@
   </xacro:robotiq_gripper>
 
   <!-- ──────────────────────────────────────────────────────────────
+       6b. ros2_control HARDWARE INTERFACES  (Phase 3)
+       Covers: base wheels, UR5 arm, gripper — all using mock hardware.
+       Included after all URDF joints are defined so the <ros2_control>
+       block can legally reference them by name.
+       ────────────────────────────────────────────────────────────── -->
+  <xacro:include filename="$(find mobile_manipulator_description)/urdf/ros2_control.xacro"/>
+
+  <xacro:mobile_manipulator_ros2_control
+      arm_prefix="${arm_prefix}"
+      gripper_prefix="${gripper_prefix}"/>
+
+  <!-- ──────────────────────────────────────────────────────────────
        6. REALSENSE D435i AT WRIST  (our macro + realsense2_description)
        Mounted on a bracket off tool0, angled -30° about Y so the lens
        faces forward-and-down for a tabletop pick-and-place view.

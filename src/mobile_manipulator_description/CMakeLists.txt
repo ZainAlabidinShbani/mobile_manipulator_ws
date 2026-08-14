@@ -8,7 +8,7 @@ endif()
 find_package(ament_cmake REQUIRED)
 find_package(xacro REQUIRED)
 
-# Install URDF/Xacro files, config, and launch files
+# Install URDF/Xacro files, config (including controllers/ subdir), and launch files
 install(
   DIRECTORY
     urdf

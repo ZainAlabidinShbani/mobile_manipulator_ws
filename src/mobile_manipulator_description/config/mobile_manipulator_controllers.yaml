@@ -1,0 +1,128 @@
+# mobile_manipulator_controllers.yaml
+# ─────────────────────────────────────────────────────────────────────────────
+# Phase 3 — full controller configuration for ros2_control_node.
+#
+# This single file is passed to ros2_control_node as --params-file.
+# It contains BOTH the controller type declarations AND all per-controller params.
+#
+# Humble behaviour (important):
+#   ros2_control_node reads ALL yaml keys that match its own node name
+#   (controller_manager.*) BUT the controller sub-nodes are also loaded in-process
+#   and CAN read their own namespace keys (diff_drive_controller.*, arm_controller.*,
+#   gripper_action_controller.*) when those are pre-declared via the same --params-file.
+#   diff_drive_controller reads wheel_separation during on_init() — before the spawner
+#   can inject params via -p — so it MUST be in this file.
+#
+# arm_controller and gripper_action_controller params are duplicated here for
+# reliability.  The spawner -p flag will override them if passed.
+#
+# Naming: no "husky" anywhere (per instructions.md).
+# ─────────────────────────────────────────────────────────────────────────────
+
+controller_manager:
+  ros__parameters:
+    update_rate: 100  # Hz
+
+    joint_state_broadcaster:
+      type: joint_state_broadcaster/JointStateBroadcaster
+
+    diff_drive_controller:
+      type: diff_drive_controller/DiffDriveController
+
+    arm_controller:
+      type: joint_trajectory_controller/JointTrajectoryController
+
+    gripper_action_controller:
+      type: position_controllers/GripperActionController
+
+
+# ─── Per-controller parameters ───────────────────────────────────────────────
+# These keys are loaded into the controller_manager node's parameter space.
+# ros2_control_node passes them to each controller when it is loaded.
+
+diff_drive_controller:
+  ros__parameters:
+    left_wheel_names:
+      - front_left_wheel
+      - rear_left_wheel
+    right_wheel_names:
+      - front_right_wheel
+      - rear_right_wheel
+
+    wheel_separation: 0.5118
+    wheel_radius: 0.1651
+
+    use_stamped_vel: false
+    publish_rate: 50.0
+
+    # Integrate odometry from wheel velocity states (mock hardware does not
+    # integrate commanded velocity into position states)
+    position_feedback: false
+
+    odom_frame_id: odom
+    base_frame_id: base_footprint
+
+    pose_covariance_diagonal:
+      - 0.001
+      - 0.001
+      - 0.001
+      - 0.001
+      - 0.001
+      - 0.010
+    twist_covariance_diagonal:
+      - 0.001
+      - 0.001
+      - 0.001
+      - 0.001
+      - 0.001
+      - 0.010
+
+
+arm_controller:
+  ros__parameters:
+    joints:
+      - arm_shoulder_pan_joint
+      - arm_shoulder_lift_joint
+      - arm_elbow_joint
+      - arm_wrist_1_joint
+      - arm_wrist_2_joint
+      - arm_wrist_3_joint
+
+    command_interfaces:
+      - position
+
+    state_interfaces:
+      - position
+      - velocity
+
+    allow_partial_joints_goal: false
+    state_publish_rate: 100.0
+    action_monitor_rate: 20.0
+    allow_integration_in_goal_trajectories: true
+
+    constraints:
+      stopped_velocity_tolerance: 0.01
+      goal_time: 0.0
+      arm_shoulder_pan_joint:
+        goal: 0.01
+      arm_shoulder_lift_joint:
+        goal: 0.01
+      arm_elbow_joint:
+        goal: 0.01
+      arm_wrist_1_joint:
+        goal: 0.01
+      arm_wrist_2_joint:
+        goal: 0.01
+      arm_wrist_3_joint:
+        goal: 0.01
+
+
+gripper_action_controller:
+  ros__parameters:
+    joint: gripper_robotiq_85_left_knuckle_joint
+    action_monitor_rate: 20.0
+    goal_tolerance: 0.01
+    max_effort: 200.0
+    allow_stalling: false
+    stall_velocity_threshold: 0.001
+    stall_timeout: 1.0

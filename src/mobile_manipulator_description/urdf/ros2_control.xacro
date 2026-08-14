@@ -1,0 +1,220 @@
+<?xml version="1.0"?>
+<!--
+  ros2_control.xacro
+  ──────────────────────────────────────────────────────────────────────────────
+  Phase 3 — ros2_control hardware interfaces using mock_components/GenericSystem.
+  Covers three independent hardware blocks:
+
+    1. base_system   — 4 diff-drive wheel joints (velocity cmd + position/velocity state)
+    2. arm_system    — 6 UR5 joints            (position cmd + position/velocity state)
+    3. gripper_system — 1 actuated knuckle joint + 5 mimic joints
+                        (position cmd + position/velocity state)
+
+  All blocks use mock_components/GenericSystem so that the full controller
+  stack can be tested without Gazebo.  Phase 4 will swap the plugin for
+  gazebo_ros2_control/GazeboSystem.
+
+  Usage in the top-level xacro:
+    <xacro:include filename="$(find mobile_manipulator_description)/urdf/ros2_control.xacro"/>
+    <xacro:mobile_manipulator_ros2_control
+        arm_prefix="arm_"
+        gripper_prefix="gripper_"/>
+  ──────────────────────────────────────────────────────────────────────────────
+-->
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <xacro:macro name="mobile_manipulator_ros2_control"
+               params="arm_prefix:=arm_  gripper_prefix:=gripper_">
+
+    <!-- ══════════════════════════════════════════════════════════════════
+         1. BASE — diff-drive wheels (4 joints, velocity-controlled)
+         All four wheels are driven; the diff_drive_controller pairs them
+         left-side / right-side internally.
+         ══════════════════════════════════════════════════════════════════ -->
+    <ros2_control name="base_system" type="system">
+      <hardware>
+        <plugin>mock_components/GenericSystem</plugin>
+        <!-- State follows command instantly (mock) -->
+        <param name="fake_sensor_commands">false</param>
+        <param name="state_following_offset">0.0</param>
+      </hardware>
+
+      <!-- Left-side wheels -->
+      <joint name="front_left_wheel">
+        <command_interface name="velocity"/>
+        <state_interface name="position"/>
+        <state_interface name="velocity"/>
+      </joint>
+
+      <joint name="rear_left_wheel">
+        <command_interface name="velocity"/>
+        <state_interface name="position"/>
+        <state_interface name="velocity"/>
+      </joint>
+
+      <!-- Right-side wheels -->
+      <joint name="front_right_wheel">
+        <command_interface name="velocity"/>
+        <state_interface name="position"/>
+        <state_interface name="velocity"/>
+      </joint>
+
+      <joint name="rear_right_wheel">
+        <command_interface name="velocity"/>
+        <state_interface name="position"/>
+        <state_interface name="velocity"/>
+      </joint>
+
+    </ros2_control>
+
+    <!-- ══════════════════════════════════════════════════════════════════
+         2. ARM — UR5 6-DOF (position-controlled)
+         Joint names carry the arm_prefix (default "arm_") as set in the
+         ur_robot macro invocation (tf_prefix="${arm_prefix}").
+         ══════════════════════════════════════════════════════════════════ -->
+    <ros2_control name="arm_system" type="system">
+      <hardware>
+        <plugin>mock_components/GenericSystem</plugin>
+        <param name="fake_sensor_commands">false</param>
+        <param name="state_following_offset">0.0</param>
+      </hardware>
+
+      <joint name="${arm_prefix}shoulder_pan_joint">
+        <command_interface name="position">
+          <param name="min">-6.2832</param>
+          <param name="max"> 6.2832</param>
+        </command_interface>
+        <state_interface name="position">
+          <param name="initial_value">0.0</param>
+        </state_interface>
+        <state_interface name="velocity"/>
+      </joint>
+
+      <joint name="${arm_prefix}shoulder_lift_joint">
+        <command_interface name="position">
+          <param name="min">-6.2832</param>
+          <param name="max"> 6.2832</param>
+        </command_interface>
+        <state_interface name="position">
+          <!-- Home: arm pointing forward-horizontal (−90°) -->
+          <param name="initial_value">-1.5707963</param>
+        </state_interface>
+        <state_interface name="velocity"/>
+      </joint>
+
+      <joint name="${arm_prefix}elbow_joint">
+        <command_interface name="position">
+          <param name="min">-3.1416</param>
+          <param name="max"> 3.1416</param>
+        </command_interface>
+        <state_interface name="position">
+          <param name="initial_value">1.5707963</param>
+        </state_interface>
+        <state_interface name="velocity"/>
+      </joint>
+
+      <joint name="${arm_prefix}wrist_1_joint">
+        <command_interface name="position">
+          <param name="min">-6.2832</param>
+          <param name="max"> 6.2832</param>
+        </command_interface>
+        <state_interface name="position">
+          <param name="initial_value">-1.5707963</param>
+        </state_interface>
+        <state_interface name="velocity"/>
+      </joint>
+
+      <joint name="${arm_prefix}wrist_2_joint">
+        <command_interface name="position">
+          <param name="min">-6.2832</param>
+          <param name="max"> 6.2832</param>
+        </command_interface>
+        <state_interface name="position">
+          <param name="initial_value">0.0</param>
+        </state_interface>
+        <state_interface name="velocity"/>
+      </joint>
+
+      <joint name="${arm_prefix}wrist_3_joint">
+        <command_interface name="position">
+          <param name="min">-6.2832</param>
+          <param name="max"> 6.2832</param>
+        </command_interface>
+        <state_interface name="position">
+          <param name="initial_value">0.0</param>
+        </state_interface>
+        <state_interface name="velocity"/>
+      </joint>
+
+    </ros2_control>
+
+    <!-- ══════════════════════════════════════════════════════════════════
+         3. GRIPPER — Robotiq 2F-85 (1 actuated + 5 mimic joints)
+         mock_components/GenericSystem handles the mimic relationship
+         via the <param name="mimic"> tag on each follower joint.
+         ══════════════════════════════════════════════════════════════════ -->
+    <ros2_control name="gripper_system" type="system">
+      <hardware>
+        <plugin>mock_components/GenericSystem</plugin>
+        <param name="fake_sensor_commands">false</param>
+        <param name="state_following_offset">0.0</param>
+      </hardware>
+
+      <!-- The single commanded joint [0, 0.8 rad] -->
+      <joint name="${gripper_prefix}robotiq_85_left_knuckle_joint">
+        <command_interface name="position">
+          <param name="min">0.0</param>
+          <param name="max">0.8</param>
+        </command_interface>
+        <state_interface name="position">
+          <param name="initial_value">0.0</param>
+        </state_interface>
+        <state_interface name="velocity"/>
+      </joint>
+
+      <!-- Mimic joints — mock_components mirrors the command automatically -->
+      <joint name="${gripper_prefix}robotiq_85_right_knuckle_joint">
+        <param name="mimic">${gripper_prefix}robotiq_85_left_knuckle_joint</param>
+        <param name="multiplier">-1</param>
+        <command_interface name="position"/>
+        <state_interface name="position"/>
+        <state_interface name="velocity"/>
+      </joint>
+
+      <joint name="${gripper_prefix}robotiq_85_left_inner_knuckle_joint">
+        <param name="mimic">${gripper_prefix}robotiq_85_left_knuckle_joint</param>
+        <param name="multiplier">1</param>
+        <command_interface name="position"/>
+        <state_interface name="position"/>
+        <state_interface name="velocity"/>
+      </joint>
+
+      <joint name="${gripper_prefix}robotiq_85_right_inner_knuckle_joint">
+        <param name="mimic">${gripper_prefix}robotiq_85_left_knuckle_joint</param>
+        <param name="multiplier">-1</param>
+        <command_interface name="position"/>
+        <state_interface name="position"/>
+        <state_interface name="velocity"/>
+      </joint>
+
+      <joint name="${gripper_prefix}robotiq_85_left_finger_tip_joint">
+        <param name="mimic">${gripper_prefix}robotiq_85_left_knuckle_joint</param>
+        <param name="multiplier">-1</param>
+        <command_interface name="position"/>
+        <state_interface name="position"/>
+        <state_interface name="velocity"/>
+      </joint>
+
+      <joint name="${gripper_prefix}robotiq_85_right_finger_tip_joint">
+        <param name="mimic">${gripper_prefix}robotiq_85_left_knuckle_joint</param>
+        <param name="multiplier">1</param>
+        <command_interface name="position"/>
+        <state_interface name="position"/>
+        <state_interface name="velocity"/>
+      </joint>
+
+    </ros2_control>
+
+  </xacro:macro>
+
+</robot>
