@@ -1,0 +1,57 @@
+# joint_limits.yaml
+# ─────────────────────────────────────────────────────────────────────────────
+# Phase 5 — limits MoveIt applies on top of the ones already in the URDF.
+#
+# Velocities mirror ur_description/config/ur5/joint_limits.yaml (180 deg/s =
+# 3.1416 rad/s on every UR5 axis).  Universal Robots does not publish
+# acceleration limits, but MoveIt's time-optimal trajectory generation needs
+# them to produce an executable JointTrajectory, so conservative values are
+# supplied here and marked as MoveIt-side additions.
+#
+# Scaling factors are applied by move_group to every plan; 0.3 keeps the first
+# Gazebo executions slow enough to watch and well inside the JTC goal
+# tolerances declared in mobile_manipulator_controllers.yaml.
+# ─────────────────────────────────────────────────────────────────────────────
+
+default_velocity_scaling_factor: 0.3
+default_acceleration_scaling_factor: 0.3
+
+joint_limits:
+  # ── UR5 arm ────────────────────────────────────────────────────────────────
+  arm_shoulder_pan_joint:
+    has_velocity_limits: true
+    max_velocity: 3.1416
+    has_acceleration_limits: true      # MoveIt-side, not from the UR datasheet
+    max_acceleration: 3.0
+  arm_shoulder_lift_joint:
+    has_velocity_limits: true
+    max_velocity: 3.1416
+    has_acceleration_limits: true
+    max_acceleration: 3.0
+  arm_elbow_joint:
+    has_velocity_limits: true
+    max_velocity: 3.1416
+    has_acceleration_limits: true
+    max_acceleration: 3.0
+  arm_wrist_1_joint:
+    has_velocity_limits: true
+    max_velocity: 3.1416
+    has_acceleration_limits: true
+    max_acceleration: 3.0
+  arm_wrist_2_joint:
+    has_velocity_limits: true
+    max_velocity: 3.1416
+    has_acceleration_limits: true
+    max_acceleration: 3.0
+  arm_wrist_3_joint:
+    has_velocity_limits: true
+    max_velocity: 3.1416
+    has_acceleration_limits: true
+    max_acceleration: 3.0
+
+  # ── Robotiq 2F-85 (actuated knuckle only; the rest are URDF mimics) ────────
+  gripper_robotiq_85_left_knuckle_joint:
+    has_velocity_limits: true
+    max_velocity: 0.5
+    has_acceleration_limits: true
+    max_acceleration: 1.0

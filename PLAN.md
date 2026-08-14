@@ -534,7 +534,19 @@ cycles complete, reporting the per-cycle summary for all 5.
 - [x] Phase 2 — URDF parses (55 links / 54 joints), RViz shows correct assembled robot
 - [x] Phase 3 — ros2_control hardware interface & controllers active on mock hardware
 - [x] Phase 4 — Gazebo RTF > 0.7, robot stable on spawn
-- [ ] Phase 5 — MoveIt2 plans + executes against live Gazebo arm
+- [x] Phase 5 — MoveIt2 plans + executes against live Gazebo arm
+      (`mobile_manipulator_moveit_config`: groups `ur5_arm` / `gripper`, 162
+      disabled pairs from the Setup Assistant's default sampling, execution via
+      `arm_controller` + `gripper_action_controller`.  Open follow-ups for
+      Phase 6/8, both rooted in Phase 3/4 rather than in MoveIt:
+        (a) gazebo_ros2_control publishes the Robotiq mimic joints as
+            `<joint>_mimic`, names absent from the URDF — move_group logs an
+            error per /joint_states message and aborts outright if a client
+            echoes those names back in a RobotState;
+        (b) the base is not braked, so extending the arm rolls the robot
+            ~0.16 m backwards (wheel odometry over-reports it as 0.26 m),
+            which will move any pre-computed grasp pose out from under the
+            gripper.)
 - [ ] Phase 6 — Nav2 drives a hardcoded goal through the warehouse
 - [ ] Phase 7 — YOLO detects + TF position within a few cm of ground truth
 - [ ] Phase 8 — orchestrator dry-run: full sequence + failure path both correct

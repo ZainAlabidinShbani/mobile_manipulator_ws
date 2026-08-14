@@ -141,13 +141,24 @@ See `04_phase4_gazebo_world.md` for the full gotcha list (`GAZEBO_MODEL_PATH`,
 ## Phase 5: MoveIt 2 Configuration
 **Task Prompt**:
 ```text
-Generate mobile_manipulator_moveit_config with planning groups "arm" and "gripper",
-self-collision matrix, and moveit_controllers.yaml. Verify with demo.launch.py
-and execute trajectory against live Gazebo simulation.
+Generate mobile_manipulator_moveit_config with planning groups "ur5_arm" (the 6 UR5
+joints) and "gripper" (Robotiq 2F-85), a self-collision matrix from the Setup
+Assistant's default sampling, and moveit_controllers.yaml wired to arm_controller
+and gripper_action_controller from Phase 3. Verify by planning to a reachable pose
+above the pick table and executing it against the live Gazebo simulation.
 ```
 **Terminal Verification**:
 ```bash
+# self-contained bench (mock hardware)
 ros2 launch mobile_manipulator_moveit_config demo.launch.py
+
+# against Phase 4 Gazebo
+ros2 launch mobile_manipulator_moveit_config move_group.launch.py use_sim_time:=true
+ros2 launch mobile_manipulator_moveit_config moveit_rviz.launch.py use_sim_time:=true
+ros2 run mobile_manipulator_moveit_config phase5_plan_execute.py \
+  --frame base_footprint --use-sim-time \
+  --goal-config 0.0 -1.1175 0.1054 -1.2083 -1.5708 0.0 \
+  --workbench 1.307 0.0 1.000 1.50 0.80 0.03 --workbench-frame odom
 ```
 
 ---

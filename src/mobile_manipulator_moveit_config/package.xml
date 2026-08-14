@@ -2,16 +2,47 @@
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
   <name>mobile_manipulator_moveit_config</name>
-  <version>0.0.0</version>
+  <version>0.1.0</version>
   <description>
-    MoveIt 2 configuration for the mobile manipulator.
-    Intentionally empty — will be populated by the MoveIt Setup Assistant
-    in Phase 5 against the verified URDF from Phase 2.
+    MoveIt 2 configuration for the mobile manipulator (Phase 5).
+    Generated against the verified Phase 2 URDF in mobile_manipulator_description:
+    planning group "ur5_arm" (6 UR5 joints), planning group "gripper"
+    (Robotiq 2F-85), a self-collision matrix produced by the MoveIt Setup
+    Assistant's default sampling, and trajectory execution wired to the Phase 3
+    controllers arm_controller and gripper_action_controller.
   </description>
   <maintainer email="zain.alabidin.shbani@gmail.com">zsh</maintainer>
   <license>Apache-2.0</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <!-- Robot model this configuration describes -->
+  <exec_depend>mobile_manipulator_description</exec_depend>
+
+  <!-- MoveIt core + launch plumbing -->
+  <exec_depend>moveit_configs_utils</exec_depend>
+  <exec_depend>moveit_ros_move_group</exec_depend>
+  <exec_depend>moveit_ros_visualization</exec_depend>
+  <exec_depend>moveit_ros_warehouse</exec_depend>
+  <exec_depend>moveit_kinematics</exec_depend>
+  <exec_depend>moveit_planners_ompl</exec_depend>
+  <exec_depend>moveit_simple_controller_manager</exec_depend>
+  <exec_depend>moveit_setup_assistant</exec_depend>
+
+  <!-- Execution back end (Phase 3 controllers) -->
+  <exec_depend>controller_manager</exec_depend>
+  <exec_depend>joint_trajectory_controller</exec_depend>
+  <exec_depend>position_controllers</exec_depend>
+  <exec_depend>joint_state_broadcaster</exec_depend>
+  <exec_depend>diff_drive_controller</exec_depend>
+
+  <!-- Description / visualisation -->
+  <exec_depend>robot_state_publisher</exec_depend>
+  <exec_depend>xacro</exec_depend>
+  <exec_depend>rviz2</exec_depend>
+  <exec_depend>rviz_common</exec_depend>
+  <exec_depend>rviz_default_plugins</exec_depend>
+  <exec_depend>tf2_ros</exec_depend>
 
   <test_depend>ament_lint_auto</test_depend>
   <test_depend>ament_lint_common</test_depend>

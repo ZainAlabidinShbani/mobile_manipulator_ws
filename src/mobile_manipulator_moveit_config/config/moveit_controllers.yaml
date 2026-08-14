@@ -1,0 +1,59 @@
+# moveit_controllers.yaml
+# ─────────────────────────────────────────────────────────────────────────────
+# Phase 5 — wires MoveIt's trajectory execution onto the ros2_control
+# controllers that already exist from Phase 3 / Phase 4.
+#
+# Controller names are taken VERBATIM from
+#   mobile_manipulator_description/config/mobile_manipulator_controllers.yaml
+# and must stay in sync with it:
+#
+#   arm_controller             joint_trajectory_controller/JointTrajectoryController
+#     → action  /arm_controller/follow_joint_trajectory   (FollowJointTrajectory)
+#   gripper_action_controller  position_controllers/GripperActionController
+#     → action  /gripper_action_controller/gripper_cmd    (GripperCommand)
+#
+# Humble gotcha: the GripperActionController action namespace is "gripper_cmd",
+# NOT "gripper_command" (that name only exists on Rolling/Jazzy).  Getting it
+# wrong makes move_group report "controller gripper_action_controller failed
+# to connect" and silently fall back to no gripper execution.
+#
+# The same file is used against mock hardware (demo.launch.py) and against
+# gazebo_ros2_control (move_group.launch.py + Phase 4 Gazebo) — both backends
+# expose the identical action servers, so nothing here is simulation-specific.
+# ─────────────────────────────────────────────────────────────────────────────
+
+moveit_controller_manager: moveit_simple_controller_manager/MoveItSimpleControllerManager
+
+moveit_simple_controller_manager:
+  controller_names:
+    - arm_controller
+    - gripper_action_controller
+
+  arm_controller:
+    type: FollowJointTrajectory
+    action_ns: follow_joint_trajectory
+    default: true
+    joints:
+      - arm_shoulder_pan_joint
+      - arm_shoulder_lift_joint
+      - arm_elbow_joint
+      - arm_wrist_1_joint
+      - arm_wrist_2_joint
+      - arm_wrist_3_joint
+
+  gripper_action_controller:
+    type: GripperCommand
+    action_ns: gripper_cmd
+    default: true
+    joints:
+      - gripper_robotiq_85_left_knuckle_joint
+
+# ── Trajectory execution tolerances ──────────────────────────────────────────
+# allowed_start_tolerance 0.0 disables the "start state differs from current
+# state" check.  Gazebo's PID-tracked arm sits a few mrad away from the last
+# commanded point, which otherwise aborts every second execution with
+# "Invalid Trajectory: start point deviates from current robot state".
+trajectory_execution:
+  allowed_execution_duration_scaling: 2.0
+  allowed_goal_duration_margin: 1.0
+  allowed_start_tolerance: 0.0
