@@ -2,7 +2,7 @@
 <!--
   ros2_control.xacro
   ──────────────────────────────────────────────────────────────────────────────
-  Phase 3 — ros2_control hardware interfaces using mock_components/GenericSystem.
+  Phase 3/4 — ros2_control hardware interfaces.
   Covers three independent hardware blocks:
 
     1. base_system   — 4 diff-drive wheel joints (velocity cmd + position/velocity state)
@@ -10,21 +10,24 @@
     3. gripper_system — 1 actuated knuckle joint + 5 mimic joints
                         (position cmd + position/velocity state)
 
-  All blocks use mock_components/GenericSystem so that the full controller
-  stack can be tested without Gazebo.  Phase 4 will swap the plugin for
-  gazebo_ros2_control/GazeboSystem.
+  Two hardware backends, selected with the use_gazebo flag:
+    - use_gazebo:=false (default, Phase 3 test rig)  → mock_components/GenericSystem
+    - use_gazebo:=true  (Phase 4 Gazebo world)       → gazebo_ros2_control/GazeboSystem
+  GazeboSystem supports the <param name="mimic"> entries natively, so the
+  joint layout is identical for both backends.
 
   Usage in the top-level xacro:
     <xacro:include filename="$(find mobile_manipulator_description)/urdf/ros2_control.xacro"/>
     <xacro:mobile_manipulator_ros2_control
         arm_prefix="arm_"
-        gripper_prefix="gripper_"/>
-  ──────────────────────────────────────────────────────────────────────────────
+        gripper_prefix="gripper_"
+        use_gazebo="false"/>
+  ─────────────────────────────────────────────────────────────────────────────
 -->
 <robot xmlns:xacro="http://www.ros.org/wiki/xacro">
 
   <xacro:macro name="mobile_manipulator_ros2_control"
-               params="arm_prefix:=arm_  gripper_prefix:=gripper_">
+               params="arm_prefix:=arm_  gripper_prefix:=gripper_  use_gazebo:=false">
 
     <!-- ══════════════════════════════════════════════════════════════════
          1. BASE — diff-drive wheels (4 joints, velocity-controlled)
@@ -32,12 +35,19 @@
          left-side / right-side internally.
          ══════════════════════════════════════════════════════════════════ -->
     <ros2_control name="base_system" type="system">
-      <hardware>
-        <plugin>mock_components/GenericSystem</plugin>
-        <!-- State follows command instantly (mock) -->
-        <param name="fake_sensor_commands">false</param>
-        <param name="state_following_offset">0.0</param>
-      </hardware>
+      <xacro:if value="${use_gazebo}">
+        <hardware>
+          <plugin>gazebo_ros2_control/GazeboSystem</plugin>
+        </hardware>
+      </xacro:if>
+      <xacro:unless value="${use_gazebo}">
+        <hardware>
+          <plugin>mock_components/GenericSystem</plugin>
+          <!-- State follows command instantly (mock) -->
+          <param name="fake_sensor_commands">false</param>
+          <param name="state_following_offset">0.0</param>
+        </hardware>
+      </xacro:unless>
 
       <!-- Left-side wheels -->
       <joint name="front_left_wheel">
@@ -73,11 +83,18 @@
          ur_robot macro invocation (tf_prefix="${arm_prefix}").
          ══════════════════════════════════════════════════════════════════ -->
     <ros2_control name="arm_system" type="system">
-      <hardware>
-        <plugin>mock_components/GenericSystem</plugin>
-        <param name="fake_sensor_commands">false</param>
-        <param name="state_following_offset">0.0</param>
-      </hardware>
+      <xacro:if value="${use_gazebo}">
+        <hardware>
+          <plugin>gazebo_ros2_control/GazeboSystem</plugin>
+        </hardware>
+      </xacro:if>
+      <xacro:unless value="${use_gazebo}">
+        <hardware>
+          <plugin>mock_components/GenericSystem</plugin>
+          <param name="fake_sensor_commands">false</param>
+          <param name="state_following_offset">0.0</param>
+        </hardware>
+      </xacro:unless>
 
       <joint name="${arm_prefix}shoulder_pan_joint">
         <command_interface name="position">
@@ -154,11 +171,18 @@
          via the <param name="mimic"> tag on each follower joint.
          ══════════════════════════════════════════════════════════════════ -->
     <ros2_control name="gripper_system" type="system">
-      <hardware>
-        <plugin>mock_components/GenericSystem</plugin>
-        <param name="fake_sensor_commands">false</param>
-        <param name="state_following_offset">0.0</param>
-      </hardware>
+      <xacro:if value="${use_gazebo}">
+        <hardware>
+          <plugin>gazebo_ros2_control/GazeboSystem</plugin>
+        </hardware>
+      </xacro:if>
+      <xacro:unless value="${use_gazebo}">
+        <hardware>
+          <plugin>mock_components/GenericSystem</plugin>
+          <param name="fake_sensor_commands">false</param>
+          <param name="state_following_offset">0.0</param>
+        </hardware>
+      </xacro:unless>
 
       <!-- The single commanded joint [0, 0.8 rad] -->
       <joint name="${gripper_prefix}robotiq_85_left_knuckle_joint">

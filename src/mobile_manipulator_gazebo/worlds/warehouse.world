@@ -1,0 +1,496 @@
+<?xml version="1.0"?>
+<!--
+  warehouse.world
+  ─────────────────────────────────────────────────────────────────────────────
+  Phase 4 — Gazebo Classic warehouse floor plan for the mobile manipulator.
+
+  All furniture (storage racks, wooden pallets, barrier obstacles) is composed
+  from existing Gazebo model-database models (osrf/gazebo_models, installed
+  under ~/.gazebo/models and referenced via model://).  No mesh geometry is
+  hand-authored in this file — the only primitive geometry is the warehouse
+  slab, perimeter walls, the home-pose marker, and the pick/drop target
+  objects (red cube, blue cylinder, green box), which are deliberately simple
+  primitives with distinct colors so YOLO can tell them apart.
+
+  Floor plan:
+    - Warehouse slab 36 x 28 m, top surface at z = 0.
+    - Two storage-rack aisles: 4 rows x 3 bookshelf racks (model://bookshelf)
+        aisle 1 between x = -11 and x = -8
+        aisle 2 between x =  8  and x = 11
+    - 8 wooden pallets (model://euro_pallet) at aisle ends and side lanes.
+    - 4 jersey barriers (model://jersey_barrier) flanking the central
+      drive lane and dividing the main aisle from the outer lanes.
+    - Pick-up workbench (model://table) at (4.5, 0), drop-off table at
+      (4.5, 3.2).  Three target objects sit on the pick workbench.
+    - Home pose marker (visual only) at the robot spawn point (0, 0).
+    - Lighting: two directional lights (key + fill) and two point lights
+      over the tables, with moderate intensities + ambient so the RGB
+      camera feed is neither blown out nor too dark.
+  ─────────────────────────────────────────────────────────────────────────────
+-->
+<sdf version="1.7">
+  <world name="warehouse">
+
+    <!-- ════════════════════════════════════════════════════════════════
+         SCENE + LIGHTING  (tuned for the wrist RGB camera: no blown-out
+         highlights, no crushed shadows; mean frame luminance ~0.5–0.7)
+         ════════════════════════════════════════════════════════════════ -->
+    <scene>
+      <ambient>0.50 0.50 0.50 1.0</ambient>
+      <background>0.32 0.36 0.42 1.0</background>
+      <shadows>true</shadows>
+    </scene>
+
+    <!-- Key light: warm white, high angle, casts shadows -->
+    <light type="directional" name="warehouse_key_light">
+      <pose>0 0 18 0 0 0</pose>
+      <diffuse>0.80 0.80 0.78 1.0</diffuse>
+      <specular>0.10 0.10 0.10 1.0</specular>
+      <direction>-0.30 0.20 -1.0</direction>
+      <cast_shadows>true</cast_shadows>
+      <intensity>0.80</intensity>
+    </light>
+
+    <!-- Fill light: cooler, low intensity, opposite angle -->
+    <light type="directional" name="warehouse_fill_light">
+      <pose>12 -10 14 0 0 0</pose>
+      <diffuse>0.45 0.45 0.50 1.0</diffuse>
+      <specular>0.05 0.05 0.05 1.0</specular>
+      <direction>-0.55 0.45 -1.0</direction>
+      <intensity>0.40</intensity>
+    </light>
+
+    <!-- Point light over the pick-up workbench -->
+    <light type="point" name="pick_workbench_light">
+      <pose>4.5 0.0 3.4 0 0 0</pose>
+      <diffuse>0.90 0.90 0.85 1.0</diffuse>
+      <specular>0.20 0.20 0.20 1.0</specular>
+      <attenuation>0.0 0.55 0.08</attenuation>
+      <intensity>0.90</intensity>
+    </light>
+
+    <!-- Point light over the drop-off table -->
+    <light type="point" name="drop_off_table_light">
+      <pose>4.5 3.2 3.4 0 0 0</pose>
+      <diffuse>0.90 0.90 0.85 1.0</diffuse>
+      <specular>0.20 0.20 0.20 1.0</specular>
+      <attenuation>0.0 0.55 0.08</attenuation>
+      <intensity>0.90</intensity>
+    </light>
+
+    <!-- ════════════════════════════════════════════════════════════════
+         PHYSICS  (1000 Hz ODE; real-time factor target ≥ 0.7)
+         ════════════════════════════════════════════════════════════════ -->
+    <physics type="ode">
+      <max_step_size>0.002</max_step_size>
+      <real_time_factor>1.0</real_time_factor>
+      <real_time_update_rate>500</real_time_update_rate>
+    </physics>
+
+    <!-- ════════════════════════════════════════════════════════════════
+         WAREHOUSE SHELL  (primitive geometry: slab + perimeter walls)
+         ════════════════════════════════════════════════════════════════ -->
+    <model name="warehouse_slab">
+      <static>true</static>
+      <pose>0 0 -0.15 0 0 0</pose>
+      <link name="slab">
+        <collision name="slab_collision">
+          <pose>0 0 0 0 0 0</pose>
+          <geometry>
+            <box>
+              <size>36.0 28.0 0.3</size>
+            </box>
+          </geometry>
+          <surface>
+            <friction>
+              <ode>
+                <mu>0.9</mu>
+                <mu2>0.9</mu2>
+              </ode>
+            </friction>
+          </surface>
+        </collision>
+        <visual name="slab_visual">
+          <pose>0 0 0 0 0 0</pose>
+          <geometry>
+            <box>
+              <size>36.0 28.0 0.3</size>
+            </box>
+          </geometry>
+          <material>
+            <script>
+              <uri>file://media/materials/scripts/gazebo.material</uri>
+              <name>Gazebo/Grey</name>
+            </script>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="north_wall">
+      <static>true</static>
+      <link name="wall">
+        <collision name="collision">
+          <geometry><box><size>36.0 0.3 2.5</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>36.0 0.3 2.5</size></box></geometry>
+          <material>
+            <script>
+              <uri>file://media/materials/scripts/gazebo.material</uri>
+              <name>Gazebo/White</name>
+            </script>
+          </material>
+        </visual>
+      </link>
+      <pose>0 -14.2 1.25 0 0 0</pose>
+    </model>
+
+    <model name="south_wall">
+      <static>true</static>
+      <link name="wall">
+        <collision name="collision">
+          <geometry><box><size>36.0 0.3 2.5</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>36.0 0.3 2.5</size></box></geometry>
+          <material>
+            <script>
+              <uri>file://media/materials/scripts/gazebo.material</uri>
+              <name>Gazebo/White</name>
+            </script>
+          </material>
+        </visual>
+      </link>
+      <pose>0 14.2 1.25 0 0 0</pose>
+    </model>
+
+    <model name="west_wall">
+      <static>true</static>
+      <link name="wall">
+        <collision name="collision">
+          <geometry><box><size>0.3 29.0 2.5</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>0.3 29.0 2.5</size></box></geometry>
+          <material>
+            <script>
+              <uri>file://media/materials/scripts/gazebo.material</uri>
+              <name>Gazebo/White</name>
+            </script>
+          </material>
+        </visual>
+      </link>
+      <pose>-18.15 0 1.25 0 0 0</pose>
+    </model>
+
+    <model name="east_wall">
+      <static>true</static>
+      <link name="wall">
+        <collision name="collision">
+          <geometry><box><size>0.3 29.0 2.5</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>0.3 29.0 2.5</size></box></geometry>
+          <material>
+            <script>
+              <uri>file://media/materials/scripts/gazebo.material</uri>
+              <name>Gazebo/White</name>
+            </script>
+          </material>
+        </visual>
+      </link>
+      <pose>18.15 0 1.25 0 0 0</pose>
+    </model>
+
+    <!-- ════════════════════════════════════════════════════════════════
+         STORAGE-RACK AISLES  (model://bookshelf, static)
+         Row layout: 4 rows x 3 racks; racks run along Y (yaw 90°).
+         Aisle 1: x = -11 / -8      Aisle 2: x = 8 / 11
+         ════════════════════════════════════════════════════════════════ -->
+    <include><uri>model://bookshelf</uri><name>rack_a1_yneg</name><pose>-11 -6 0 0 0 1.5708</pose><static>true</static></include>
+    <include><uri>model://bookshelf</uri><name>rack_a1_ymid</name><pose>-11 0 0 0 0 1.5708</pose><static>true</static></include>
+    <include><uri>model://bookshelf</uri><name>rack_a1_ypos</name><pose>-11 6 0 0 0 1.5708</pose><static>true</static></include>
+    <include><uri>model://bookshelf</uri><name>rack_a2_yneg</name><pose>-8 -6 0 0 0 1.5708</pose><static>true</static></include>
+    <include><uri>model://bookshelf</uri><name>rack_a2_ymid</name><pose>-8 0 0 0 0 1.5708</pose><static>true</static></include>
+    <include><uri>model://bookshelf</uri><name>rack_a2_ypos</name><pose>-8 6 0 0 0 1.5708</pose><static>true</static></include>
+    <include><uri>model://bookshelf</uri><name>rack_b1_yneg</name><pose>8 -6 0 0 0 1.5708</pose><static>true</static></include>
+    <include><uri>model://bookshelf</uri><name>rack_b1_ymid</name><pose>8 0 0 0 0 1.5708</pose><static>true</static></include>
+    <include><uri>model://bookshelf</uri><name>rack_b1_ypos</name><pose>8 6 0 0 0 1.5708</pose><static>true</static></include>
+    <include><uri>model://bookshelf</uri><name>rack_b2_yneg</name><pose>11 -6 0 0 0 1.5708</pose><static>true</static></include>
+    <include><uri>model://bookshelf</uri><name>rack_b2_ymid</name><pose>11 0 0 0 0 1.5708</pose><static>true</static></include>
+    <include><uri>model://bookshelf</uri><name>rack_b2_ypos</name><pose>11 6 0 0 0 1.5708</pose><static>true</static></include>
+
+    <!-- ════════════════════════════════════════════════════════════════
+         WOODEN PALLETS  (model://euro_pallet, static)
+         At the end of each aisle plus along the outer side lanes.
+         ════════════════════════════════════════════════════════════════ -->
+    <include><uri>model://euro_pallet</uri><name>pallet_aisle1_neg</name><pose>-9.5 -8.6 0 0 0 1.5708</pose><static>true</static></include>
+    <include><uri>model://euro_pallet</uri><name>pallet_aisle1_pos</name><pose>-9.5 8.6 0 0 0 1.5708</pose><static>true</static></include>
+    <include><uri>model://euro_pallet</uri><name>pallet_aisle2_neg</name><pose>9.5 -8.6 0 0 0 1.5708</pose><static>true</static></include>
+    <include><uri>model://euro_pallet</uri><name>pallet_aisle2_pos</name><pose>9.5 8.6 0 0 0 1.5708</pose><static>true</static></include>
+    <include><uri>model://euro_pallet</uri><name>pallet_north</name><pose>0 -10.6 0 0 0 0.35</pose><static>true</static></include>
+    <include><uri>model://euro_pallet</uri><name>pallet_south</name><pose>0 10.6 0 0 0 -0.35</pose><static>true</static></include>
+    <include><uri>model://euro_pallet</uri><name>pallet_west</name><pose>-14.0 0 0 0 0 1.5708</pose><static>true</static></include>
+    <include><uri>model://euro_pallet</uri><name>pallet_east</name><pose>14.0 0 0 0 0 1.5708</pose><static>true</static></include>
+
+    <!-- ════════════════════════════════════════════════════════════════
+         BARRIER OBSTACLES  (model://jersey_barrier, static)
+         Two flank the central drive lane to the workbench (at x = 1.6,
+         oriented along Y); two divide the main aisle from the outer lanes.
+         ════════════════════════════════════════════════════════════════ -->
+    <include><uri>model://jersey_barrier</uri><name>barrier_lane_north</name><pose>1.6 2.5 0 0 0 1.5708</pose><static>true</static></include>
+    <include><uri>model://jersey_barrier</uri><name>barrier_lane_south</name><pose>1.6 -2.5 0 0 0 1.5708</pose><static>true</static></include>
+    <include><uri>model://jersey_barrier</uri><name>barrier_aisle_north</name><pose>0 4.6 0 0 0 0.0</pose><static>true</static></include>
+    <include><uri>model://jersey_barrier</uri><name>barrier_aisle_south</name><pose>0 -4.6 0 0 0 0.0</pose><static>true</static></include>
+
+    <!-- ════════════════════════════════════════════════════════════════
+         PICK-UP WORKBENCH + DROP-OFF TABLE  (model://table, static)
+         Table top surface is 1.5 x 0.8 m at z = 1.0.
+         ════════════════════════════════════════════════════════════════ -->
+    <include><uri>model://table</uri><name>pick_workbench</name><pose>4.5 0 0 0 0 0</pose><static>true</static></include>
+    <include><uri>model://table</uri><name>drop_off_table</name><pose>4.5 3.2 0 0 0 0</pose><static>true</static></include>
+
+    <!-- Drop-zone marker on the drop-off table (visual only, no collision) -->
+    <model name="drop_zone_marker">
+      <static>true</static>
+      <link name="marker">
+        <visual name="visual">
+          <pose>0 0 0 0 0 0</pose>
+          <geometry>
+            <box>
+              <size>0.45 0.35 0.005</size>
+            </box>
+          </geometry>
+          <material>
+            <script>
+              <uri>file://media/materials/scripts/gazebo.material</uri>
+              <name>Gazebo/DarkGrey</name>
+            </script>
+          </material>
+        </visual>
+      </link>
+      <pose>4.5 3.2 1.0075 0 0 0</pose>
+    </model>
+
+    <!-- ════════════════════════════════════════════════════════════════
+         TARGET OBJECTS on the pick workbench
+         (cube / cylinder / box primitives, distinct saturated colors for
+         YOLO class separation; dynamic so later phases can grasp them)
+
+         These are <model> poses, i.e. WORLD coordinates — they are NOT
+         relative to pick_workbench.  Each x therefore carries the
+         workbench's own x = 4.5; without it the objects spawn in mid-air
+         over the robot's home pose at the origin and drop onto its deck.
+         ════════════════════════════════════════════════════════════════ -->
+    <model name="target_cube_red">
+      <static>false</static>
+      <link name="body">
+        <inertial>
+          <mass>0.5</mass>
+          <inertia>
+            <ixx>0.00027</ixx>
+            <ixy>0.0</ixy>
+            <ixz>0.0</ixz>
+            <iyy>0.00027</iyy>
+            <iyz>0.0</iyz>
+            <izz>0.00027</izz>
+          </inertia>
+        </inertial>
+        <collision name="collision">
+          <geometry>
+            <box>
+              <size>0.08 0.08 0.08</size>
+            </box>
+          </geometry>
+          <surface>
+            <friction>
+              <ode>
+                <mu>0.9</mu>
+                <mu2>0.9</mu2>
+              </ode>
+            </friction>
+          </surface>
+        </collision>
+        <visual name="visual">
+          <geometry>
+            <box>
+              <size>0.08 0.08 0.08</size>
+            </box>
+          </geometry>
+          <material>
+            <script>
+              <uri>file://media/materials/scripts/gazebo.material</uri>
+              <name>Gazebo/Red</name>
+            </script>
+          </material>
+        </visual>
+      </link>
+      <pose>4.25 0.12 1.051 0 0 0.25</pose>
+    </model>
+
+    <model name="target_cylinder_blue">
+      <static>false</static>
+      <link name="body">
+        <inertial>
+          <mass>0.4</mass>
+          <inertia>
+            <ixx>0.00011</ixx>
+            <ixy>0.0</ixy>
+            <ixz>0.0</ixz>
+            <iyy>0.00011</iyy>
+            <iyz>0.0</iyz>
+            <izz>0.00005</izz>
+          </inertia>
+        </inertial>
+        <collision name="collision">
+          <geometry>
+            <cylinder>
+              <radius>0.04</radius>
+              <length>0.12</length>
+            </cylinder>
+          </geometry>
+          <surface>
+            <friction>
+              <ode>
+                <mu>0.9</mu>
+                <mu2>0.9</mu2>
+              </ode>
+            </friction>
+          </surface>
+        </collision>
+        <visual name="visual">
+          <geometry>
+            <cylinder>
+              <radius>0.04</radius>
+              <length>0.12</length>
+            </cylinder>
+          </geometry>
+          <material>
+            <script>
+              <uri>file://media/materials/scripts/gazebo.material</uri>
+              <name>Gazebo/Blue</name>
+            </script>
+          </material>
+        </visual>
+      </link>
+      <pose>4.55 -0.22 1.071 0 0 0.55</pose>
+    </model>
+
+    <model name="target_box_green">
+      <static>false</static>
+      <link name="body">
+        <inertial>
+          <mass>0.45</mass>
+          <inertia>
+            <ixx>0.00019</ixx>
+            <ixy>0.0</ixy>
+            <ixz>0.0</ixz>
+            <iyy>0.00032</iyy>
+            <iyz>0.0</iyz>
+            <izz>0.00025</izz>
+          </inertia>
+        </inertial>
+        <collision name="collision">
+          <geometry>
+            <box>
+              <size>0.10 0.06 0.08</size>
+            </box>
+          </geometry>
+          <surface>
+            <friction>
+              <ode>
+                <mu>0.9</mu>
+                <mu2>0.9</mu2>
+              </ode>
+            </friction>
+          </surface>
+        </collision>
+        <visual name="visual">
+          <geometry>
+            <box>
+              <size>0.10 0.06 0.08</size>
+            </box>
+          </geometry>
+          <material>
+            <script>
+              <uri>file://media/materials/scripts/gazebo.material</uri>
+              <name>Gazebo/Green</name>
+            </script>
+          </material>
+        </visual>
+      </link>
+      <pose>4.72 0.18 1.051 0 0 -0.35</pose>
+    </model>
+
+    <!-- ════════════════════════════════════════════════════════════════
+         HOME-POSE MARKER  (visual only, under the robot at spawn)
+         ════════════════════════════════════════════════════════════════ -->
+    <model name="home_pose_marker">
+      <static>true</static>
+      <link name="marker">
+        <visual name="visual">
+          <geometry>
+            <box>
+              <size>1.2 0.9 0.01</size>
+            </box>
+          </geometry>
+          <material>
+            <script>
+              <uri>file://media/materials/scripts/gazebo.material</uri>
+              <name>Gazebo/Green</name>
+            </script>
+          </material>
+        </visual>
+      </link>
+      <pose>0 0 0.005 0 0 0</pose>
+    </model>
+
+    <!-- ════════════════════════════════════════════════════════════════
+         PHASE-4 SCREENSHOT CAMERA  (world-fixed, gazebo_ros camera)
+         Third-person view of the robot at its home pose, used to capture
+         the Phase-4 stability screenshot headlessly (without gzclient).
+
+         Publishes /phase4_camera/image_raw + /phase4_camera/camera_info.
+         NOTE: gazebo_ros_camera derives its topic names from the plugin's
+         <camera_name> ("<camera_name>/image_raw"), so a <ros><remapping>
+         keyed on the bare name "image_raw" never matches and is silently
+         ignored — the topic is controlled by <camera_name> alone.
+         NOTE: <horizontal_fov>/<image>/<clip> MUST sit inside <camera>;
+         as direct <sensor> children they are dropped and the sensor falls
+         back to the SDF default 320x240 camera.
+
+         Pose: eye (-2.4, -2.4, 1.35) aimed at (0, 0, 0.45).  The -X/-Y
+         quadrant is the only approach to the origin that the jersey
+         barriers (x=1.6, y=+-4.6) do not block.  The downward tilt is
+         PITCH, not roll: view dir = (cosY cosP, sinY cosP, -sinP).
+         ════════════════════════════════════════════════════════════════ -->
+    <model name="phase4_camera">
+      <static>true</static>
+      <link name="phase4_camera_link">
+        <sensor name="phase4_camera_sensor" type="camera">
+          <always_on>true</always_on>
+          <update_rate>15</update_rate>
+          <camera>
+            <horizontal_fov>1.047</horizontal_fov>
+            <image>
+              <width>1280</width>
+              <height>720</height>
+              <format>R8G8B8</format>
+            </image>
+            <clip>
+              <near>0.05</near>
+              <far>100.0</far>
+            </clip>
+          </camera>
+          <plugin name="phase4_camera_plugin" filename="libgazebo_ros_camera.so">
+            <camera_name>phase4_camera</camera_name>
+            <frame_name>phase4_camera_link</frame_name>
+          </plugin>
+        </sensor>
+      </link>
+      <pose>-2.4 -2.4 1.35 0 0.25921 0.7854</pose>
+    </model>
+
+  </world>
+</sdf>

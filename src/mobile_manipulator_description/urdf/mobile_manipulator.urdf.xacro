@@ -47,6 +47,14 @@
   <!-- Camera base name -->
   <xacro:arg name="camera_name"      default="camera"/>
 
+  <!-- Phase 4: set to true to swap ros2_control hardware to
+       gazebo_ros2_control/GazeboSystem and add the Gazebo model plugin
+       + D435i camera/depth sensors (gazebo.xacro) -->
+  <xacro:arg name="use_gazebo"       default="false"/>
+  <!-- Absolute path to mobile_manipulator_controllers.yaml, injected by the
+       Gazebo launch file (gzserver cannot resolve $(find ...) here) -->
+  <xacro:arg name="controllers_yaml" default=""/>
+
   <!-- Suppress husky's decorative sensor arch (we mount the arm there instead) -->
   <xacro:arg name="sensor_arch"      default="0"/>
   <xacro:arg name="sensor_arch_height" default="510"/>
@@ -143,7 +151,8 @@
 
   <xacro:mobile_manipulator_ros2_control
       arm_prefix="${arm_prefix}"
-      gripper_prefix="${gripper_prefix}"/>
+      gripper_prefix="${gripper_prefix}"
+      use_gazebo="$(arg use_gazebo)"/>
 
   <!-- ──────────────────────────────────────────────────────────────
        6. REALSENSE D435i AT WRIST  (our macro + realsense2_description)
@@ -158,5 +167,18 @@
       camera_name="${camera_name}"
       xyz="0.05 0.0 0.04"
       rpy="0.0 -0.5236 0.0"/>
+
+  <!-- ──────────────────────────────────────────────────────────────
+       7. GAZEBO-ONLY ELEMENTS  (Phase 4)
+       gazebo_ros2_control model plugin + D435i camera/depth sensors.
+       Only emitted when use_gazebo:=true (world/sim launches).
+       ────────────────────────────────────────────────────────────── -->
+  <xacro:if value="$(arg use_gazebo)">
+    <xacro:include filename="$(find mobile_manipulator_description)/urdf/gazebo.xacro"/>
+
+    <xacro:mobile_manipulator_gazebo
+        camera_name="${camera_name}"
+        controllers_yaml="$(arg controllers_yaml)"/>
+  </xacro:if>
 
 </robot>

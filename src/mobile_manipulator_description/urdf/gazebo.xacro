@@ -1,0 +1,85 @@
+<?xml version="1.0"?>
+<!--
+  gazebo.xacro
+  ──────────────────────────────────────────────────────────────────────────────
+  Phase 4 — Gazebo-only elements for the mobile manipulator:
+
+    1. gazebo_ros2_control model plugin (libgazebo_ros2_control.so)
+       Instantiates the controller_manager INSIDE gzserver, wires the
+       gazebo_ros2_control/GazeboSystem hardware (declared in
+       ros2_control.xacro with use_gazebo:=true) to the simulated joints,
+       and loads the controller configuration from the given YAML file.
+
+    2. D435i RGB camera sensor (libgazebo_ros_camera.so)
+       Attached to camera_color_optical_frame with a 180° roll about Z so
+       that Gazebo's rendered image (+Y up in the sensor frame) matches the
+       REP-103 ROS optical convention (row 0 = top = -Y of the optical frame).
+
+  NOTE: gazebo_ros camera plugins publish the raw rendered image with no
+  internal flip; the sensor pose is therefore the only place that corrects
+  for the Gazebo vs ROS optical-frame orientation difference.
+  NOTE: a depth sensor (libgazebo_ros_depth_camera.so) is intentionally NOT
+  declared — that plugin is not shipped by the ros-humble-gazebo-plugins
+  binary package, and gzserver refuses to load it.
+
+  Usage in the top-level xacro (only when use_gazebo:=true):
+    <xacro:include filename="$(find mobile_manipulator_description)/urdf/gazebo.xacro"/>
+    <xacro:mobile_manipulator_gazebo
+        camera_name="camera"
+        controllers_yaml="<absolute path to mobile_manipulator_controllers.yaml>"/>
+  ─────────────────────────────────────────────────────────────────────────────
+-->
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <xacro:macro name="mobile_manipulator_gazebo"
+               params="camera_name:='camera' controllers_yaml:=''">
+
+    <!-- ══════════════════════════════════════════════════════════════════
+         gazebo_ros2_control plugin
+         The <parameters> path is injected at launch time as an absolute
+         path (xacro arg) — gzserver does not resolve $(find ...) inside
+         plugin SDF elements, so we never rely on that substitution.
+         ══════════════════════════════════════════════════════════════════ -->
+    <gazebo>
+      <plugin name="gazebo_ros2_control" filename="libgazebo_ros2_control.so">
+        <robot_param>robot_description</robot_param>
+        <robot_param_node>robot_state_publisher</robot_param_node>
+        <parameters>${controllers_yaml}</parameters>
+      </plugin>
+    </gazebo>
+
+    <!-- ══════════════════════════════════════════════════════════════════
+         D435i RGB camera — publishes /camera/color/image_raw + camera_info
+         ══════════════════════════════════════════════════════════════════ -->
+    <gazebo reference="${camera_name}_color_optical_frame">
+      <sensor name="${camera_name}_color" type="camera">
+        <always_on>true</always_on>
+        <update_rate>10</update_rate>
+        <pose>0 0 0 0 0 3.141592653589793</pose>
+        <camera>
+          <horizontal_fov>1.3963</horizontal_fov>
+          <image>
+            <width>640</width>
+            <height>480</height>
+            <format>R8G8B8</format>
+          </image>
+          <clip>
+            <near>0.05</near>
+            <far>30.0</far>
+          </clip>
+        </camera>
+        <plugin name="${camera_name}_color_plugin" filename="libgazebo_ros_camera.so">
+          <ros>
+            <remapping>image_raw:=/camera/color/image_raw</remapping>
+            <remapping>camera_info:=/camera/color/camera_info</remapping>
+          </ros>
+          <camera_name>camera/color</camera_name>
+          <frame_name>${camera_name}_color_optical_frame</frame_name>
+          <hack_baseline>0.07</hack_baseline>
+        </plugin>
+      </sensor>
+    </gazebo>
+
+  </xacro:macro>
+
+</robot>

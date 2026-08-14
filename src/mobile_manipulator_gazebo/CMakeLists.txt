@@ -7,8 +7,13 @@ endif()
 
 find_package(ament_cmake REQUIRED)
 
-# Phase 4 will install: worlds/ launch/
-install(DIRECTORY DESTINATION share/${PROJECT_NAME})
+# Phase 4: worlds/ and launch/
+install(DIRECTORY worlds launch DESTINATION share/${PROJECT_NAME})
+
+install(PROGRAMS
+  scripts/home_hold.py
+  scripts/capture_screenshot.py
+  DESTINATION lib/${PROJECT_NAME})
 
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)
