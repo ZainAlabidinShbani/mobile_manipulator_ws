@@ -4,6 +4,13 @@
   ─────────────────────────────────────────────────────────────────────────────
   Phase 4 — Gazebo Classic warehouse floor plan for the mobile manipulator.
 
+  Phase 4 rework: rack rows densified to 5 bays, cargo pallets + cardboard
+  stock inside the aisles, construction barrels / cabinets / brick cargo
+  blocks shaping the drivable rooms and giving AMCL asymmetric landmarks.
+  All clutter keeps >= 1.0 m clearance from the Phase 6 routes; sub-0.30 m
+  obstacles (pallets, cardboard, cones) sit only where the robot never
+  drives, because the 2D lidar scan plane cannot see them.
+
   All furniture (storage racks, wooden pallets, barrier obstacles) is composed
   from existing Gazebo model-database models (osrf/gazebo_models, installed
   under ~/.gazebo/models and referenced via model://).  No mesh geometry is
@@ -243,6 +250,52 @@
     <include><uri>model://jersey_barrier</uri><name>barrier_lane_south</name><pose>1.6 -2.5 0 0 0 1.5708</pose><static>true</static></include>
     <include><uri>model://jersey_barrier</uri><name>barrier_aisle_north</name><pose>0 4.6 0 0 0 0.0</pose><static>true</static></include>
     <include><uri>model://jersey_barrier</uri><name>barrier_aisle_south</name><pose>0 -4.6 0 0 0 0.0</pose><static>true</static></include>
+
+    <!-- ════════════════════════════════════════════════════════════════
+         DENSE STORAGE + CLUTTER  (phase4 rework: harder, busier floor)
+         Every model here is static and placed >= 1.0 m clear of both the
+         Phase 6 demo route (home -> barrier gate -> workbench) and the
+         mapping loop (west -3.0 / north 6.5 / east 6.2 lines).  Anything
+         shorter than the 0.30 m lidar scan plane (pallets, cardboard,
+         cones) stays deep inside rack aisles or far corners — the 2D
+         lidar cannot see it, so it must never sit on a drivable route.
+         ════════════════════════════════════════════════════════════════ -->
+
+    <!-- Rack rows densified: 5 bookshelves per row (added y = -3, +3) -->
+    <include><uri>model://bookshelf</uri><name>rack_a1_ynhalf</name><pose>-11 -3 0 0 0 1.5708</pose><static>true</static></include>
+    <include><uri>model://bookshelf</uri><name>rack_a1_yphalf</name><pose>-11 3 0 0 0 1.5708</pose><static>true</static></include>
+    <include><uri>model://bookshelf</uri><name>rack_a2_ynhalf</name><pose>-8 -3 0 0 0 1.5708</pose><static>true</static></include>
+    <include><uri>model://bookshelf</uri><name>rack_a2_yphalf</name><pose>-8 3 0 0 0 1.5708</pose><static>true</static></include>
+    <include><uri>model://bookshelf</uri><name>rack_b1_ynhalf</name><pose>8 -3 0 0 0 1.5708</pose><static>true</static></include>
+    <include><uri>model://bookshelf</uri><name>rack_b1_yphalf</name><pose>8 3 0 0 0 1.5708</pose><static>true</static></include>
+    <include><uri>model://bookshelf</uri><name>rack_b2_ynhalf</name><pose>11 -3 0 0 0 1.5708</pose><static>true</static></include>
+    <include><uri>model://bookshelf</uri><name>rack_b2_yphalf</name><pose>11 3 0 0 0 1.5708</pose><static>true</static></include>
+
+    <!-- Cargo pallets inside the rack aisles, cardboard stock on top -->
+    <include><uri>model://euro_pallet</uri><name>pallet_aisle1_mid</name><pose>-9.5 3.0 0 0 0 1.5708</pose><static>true</static></include>
+    <include><uri>model://euro_pallet</uri><name>pallet_aisle2_mid</name><pose>9.5 -3.0 0 0 0 1.5708</pose><static>true</static></include>
+    <include><uri>model://cardboard_box</uri><name>cargo_box_aisle1</name><pose>-9.5 3.0 0.15 0 0 0.2</pose><static>true</static></include>
+    <include><uri>model://cardboard_box</uri><name>cargo_box_aisle2</name><pose>9.5 -3.0 0.15 0 0 -0.35</pose><static>true</static></include>
+
+    <!-- West room shaping: barrels + a cabinet landmark near the -3,0 turn -->
+    <include><uri>model://construction_barrel</uri><name>barrel_west_north</name><pose>-1.7 1.7 0 0 0 0</pose><static>true</static></include>
+    <include><uri>model://construction_barrel</uri><name>barrel_west_south</name><pose>-0.6 -2.6 0 0 0 0</pose><static>true</static></include>
+    <include><uri>model://cabinet</uri><name>cabinet_home_west</name><pose>-3.9 -1.2 0 0 0 0.3</pose><static>true</static></include>
+
+    <!-- North corridor structure + big cargo block landmark -->
+    <include><uri>model://jersey_barrier</uri><name>barrier_north_zone</name><pose>1.5 8.6 0 0 0 0.25</pose><static>true</static></include>
+    <include><uri>model://brick_box_3x1x3</uri><name>cargo_block_north</name><pose>-5.5 9.0 0 0 0 0.15</pose><static>true</static></include>
+
+    <!-- East approach: barrel + cabinet, unique signature near the goal -->
+    <include><uri>model://construction_barrel</uri><name>barrel_east_north</name><pose>4.9 5.1 0 0 0 0</pose><static>true</static></include>
+    <include><uri>model://cabinet</uri><name>cabinet_east</name><pose>7.6 1.8 0 0 0 -0.4</pose><static>true</static></include>
+
+    <!-- South zone: asymmetric landmarks (AMCL disambiguation) + decor -->
+    <include><uri>model://brick_box_3x1x3</uri><name>cargo_block_south</name><pose>3.0 -8.8 0 0 0 1.35</pose><static>true</static></include>
+    <include><uri>model://construction_barrel</uri><name>barrel_south</name><pose>1.0 -6.2 0 0 0 0</pose><static>true</static></include>
+    <include><uri>model://construction_cone</uri><name>cone_sw</name><pose>-5.0 -4.5 0 0 0 0</pose><static>true</static></include>
+    <include><uri>model://construction_cone</uri><name>cone_nw</name><pose>-5.5 4.0 0 0 0 0</pose><static>true</static></include>
+    <include><uri>model://construction_cone</uri><name>cone_se</name><pose>5.5 -5.5 0 0 0 0</pose><static>true</static></include>
 
     <!-- ════════════════════════════════════════════════════════════════
          PICK-UP WORKBENCH + DROP-OFF TABLE  (model://table, static)

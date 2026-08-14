@@ -534,6 +534,11 @@ cycles complete, reporting the per-cycle summary for all 5.
 - [x] Phase 2 — URDF parses (55 links / 54 joints), RViz shows correct assembled robot
 - [x] Phase 3 — ros2_control hardware interface & controllers active on mock hardware
 - [x] Phase 4 — Gazebo RTF > 0.7, robot stable on spawn
+      (reworked 2026-08-14 before Phase 6: rack rows densified to 5 bays,
+      barrels/cabinets/brick-blocks as asymmetric lidar landmarks, all
+      clutter ≥ 1.0 m off the Phase 6 routes; skid-steer fix — wheel
+      mu2 0.5 vendor patch + wheel_separation_multiplier 1.875 — the
+      base could not rotate in place before it. RTF 0.96 headless.)
 - [x] Phase 5 — MoveIt2 plans + executes against live Gazebo arm
       (`mobile_manipulator_moveit_config`: groups `ur5_arm` / `gripper`, 162
       disabled pairs from the Setup Assistant's default sampling, execution via

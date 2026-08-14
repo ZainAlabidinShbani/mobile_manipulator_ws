@@ -165,3 +165,43 @@ The robot URDF is generated with `use_gazebo:=true`, which swaps all three `<ros
 blocks to `gazebo_ros2_control/GazeboSystem` and emits `gazebo.xacro`. The controllers YAML
 path is passed in as the `controllers_yaml` xacro arg as an **absolute path** — gzserver
 does not resolve `$(find ...)` inside plugin SDF elements.
+
+## Rework (2026-08-14) — denser world + skid-steer physics fix
+
+The world was reworked mid-project (before Phase 6 mapping) to be busier and
+harder while keeping every pose the later phases depend on — slab, walls,
+barrier gate at x = 1.6, both tables, target objects, home marker, and
+`phase4_camera` are all unchanged:
+
+- rack rows densified to **5 bookshelves per row** (added y = ±3 bays)
+- cargo pallets + static `cardboard_box` stock inside the rack aisles
+- `construction_barrel` ×4, `cabinet` ×2, `brick_box_3x1x3` ×2,
+  `construction_cone` ×3 as room-shaping clutter and **asymmetric AMCL
+  landmarks** (north/south halves no longer look alike to a lidar)
+- placement rule: everything keeps ≥ 1.0 m clearance from the Phase 6 demo
+  route (home → gate → workbench) and the mapping loop (x = −3, y = 6.5,
+  x = 6.2 lines). Anything shorter than the 0.30 m lidar scan plane
+  (pallets 0.145 m, cardboard 0.30 m, cones) sits only where the robot
+  never drives — the 2D lidar cannot see it, so it must never flank a route.
+- keep clutter off the `phase4_camera` sight line ((−2.4,−2.4) → origin):
+  the first rework attempt put a barrel at (−1.2,−1.9) and it filled a
+  third of the screenshot frame.
+
+Physics fix shipped with the rework (found while testing Phase 6 mapping —
+commanded in-place spins produced ~0.005 rad/s, the base simply could not
+rotate):
+
+- `husky_description/urdf/wheel.urdf.xacro` (nested vendor repo, local
+  patch): wheel `mu2` 1.0 → **0.5** — isotropic friction let the lateral
+  force of four fixed wheels cancel the available yaw torque
+  (4·µN·track/2 ≈ 163 N·m driving vs ≈ 150 N·m resisting).
+- `mobile_manipulator_controllers.yaml`: **`wheel_separation_multiplier:
+  1.875`** (Clearpath's own skid compensation value).
+- Verified: 0.5 rad/s commanded → ≈ 0.37 rad/s actual body yaw (74 %),
+  position walk ≈ 0.27 m per full spin — normal skid-steer behaviour.
+
+Gate re-verification after the rework: robot pose bit-identical over 30 s
+at spawn, RTF **0.96 headless / ≈ 0.7 with gzclient** (kill gzclient before
+measuring: `pkill -9 -f "[g]zclient"`), screenshot via `phase4_camera`
+shows the stowed robot on the home marker with the gate wall and workbench
+targets in frame.

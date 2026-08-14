@@ -51,6 +51,13 @@ diff_drive_controller:
 
     wheel_separation: 0.5118
     wheel_radius: 0.1651
+    # Skid-steer slip compensation (Clearpath value): in-place rotation drags
+    # four fixed wheels sideways, so the effective track is much wider than the
+    # geometric 0.5118 m. Scales both the commanded wheel differential and the
+    # odometry yaw. Pairs with the mu2=0.5 lateral-friction patch in
+    # husky_description/urdf/wheel.urdf.xacro — without these the base cannot
+    # rotate in place at all (wheels saturate against lateral friction).
+    wheel_separation_multiplier: 1.875
 
     use_stamped_vel: false
     publish_rate: 50.0
