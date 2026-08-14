@@ -1,11 +1,13 @@
 # Phase 3 — ros2_control & Hardware Interface
 
+**Status: ✅ complete** (see `PLAN.md` §14 checklist)
+
 ## Task Prompt for Agent
 ```text
 In mobile_manipulator_description, add a <ros2_control> tag using
 mock_components/GenericSystem hardware interface (not Gazebo yet) covering:
-diff-drive wheels, UR5's 6 arm joints, and the gripper's 1 actuated
-joint. Write mobile_manipulator_controllers.yaml configuring:
+the 4 diff-drive wheels, UR5's 6 arm joints, and the gripper's 1 actuated
+joint plus its 5 mimic joints. Write mobile_manipulator_controllers.yaml configuring:
 joint_state_broadcaster, diff_drive_controller, joint_trajectory_controller
 (UR5 arm), and gripper_action_controller (Robotiq). Provide control_test.launch.py
 that starts ros2_control_node + spawns all 4 controllers using mock hardware.
@@ -136,3 +138,38 @@ ros2 action send_goal /gripper_action_controller/gripper_cmd \
   match the published point after ~2 s).
 - Optional: `/diff_drive_controller/odom` pose.x increases while cmd_vel is
   published; gripper knuckle reaches the commanded position.
+
+---
+
+## As Built
+
+```
+mobile_manipulator_description/
+├── urdf/ros2_control.xacro                   # macro mobile_manipulator_ros2_control
+└── config/mobile_manipulator_controllers.yaml
+└── launch/control_test.launch.py
+```
+
+**Three independent `<ros2_control>` systems**, all declared by the same macro:
+
+| system | joints | command | state |
+|--------|--------|---------|-------|
+| `base_system` | `front_left_wheel`, `rear_left_wheel`, `front_right_wheel`, `rear_right_wheel` | velocity | position, velocity |
+| `arm_system` | `arm_shoulder_pan_joint` … `arm_wrist_3_joint` (6) | position | position, velocity |
+| `gripper_system` | `gripper_robotiq_85_left_knuckle_joint` + 5 mimic joints | position | position, velocity |
+
+The macro takes a **`use_gazebo` flag** that swaps the `<hardware>` plugin between
+`mock_components/GenericSystem` (this phase) and `gazebo_ros2_control/GazeboSystem`
+(Phase 4) — the joint layout is byte-identical either way, and both backends honour the
+`<param name="mimic">` entries. **Any joint added later must be added to the URDF, the
+matching `<ros2_control>` block, and the controllers yaml together.**
+
+`mobile_manipulator_controllers.yaml` is a single `--params-file` holding both the
+`controller_manager` type declarations and every controller's own parameter namespace.
+That is deliberate: `diff_drive_controller` reads `wheel_separation`/`wheel_radius` during
+`on_init()`, before a spawner's `-p` flag could inject them. Phase 4 reuses this exact file
+by handing its absolute path to the `gazebo_ros2_control` plugin.
+
+Arm initial state = the stow pose `(0, -90°, +90°, -90°, 0, 0)`, matching
+`config/initial_positions.yaml`.
+

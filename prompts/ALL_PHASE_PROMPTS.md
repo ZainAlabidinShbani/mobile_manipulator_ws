@@ -21,9 +21,25 @@ sudo apt install -y \
 pip install ultralytics opencv-python transforms3d mss
 ```
 
+The mobile base is **not** available from apt on Humble — clone the plain-xacro community
+port into `src/` (it keeps its upstream name because it is referenced, never redefined):
+
+```bash
+cd ~/mobile_manipulator_ws/src
+git clone https://github.com/akrbot/husky_description_ros2.git husky_description
+cd ~/mobile_manipulator_ws && rosdep install --from-paths src --ignore-src -r -y
+```
+
+**Per-terminal preamble for every phase below** (Phases 3+ break without it):
+```bash
+source /opt/ros/humble/setup.bash && source ~/mobile_manipulator_ws/install/setup.bash
+export ROS_LOCALHOST_ONLY=1
+for p in $(ps aux | grep "[r]os2cli.daemon" | awk '{print $2}'); do kill -9 $p; done
+```
+
 ---
 
-## Phase 1: Workspace Bootstrap
+## Phase 1: Workspace Bootstrap  ✅ complete
 **Task Prompt**:
 ```text
 In ~/mobile_manipulator_ws, create 6 valid ROS 2 Humble packages:
@@ -39,63 +55,86 @@ Run `colcon build --symlink-install` and confirm all build with zero errors.
 **Terminal Verification**:
 ```bash
 cd ~/mobile_manipulator_ws && colcon build --symlink-install
-source install/setup.bash && ros2 pkg list | grep mobile_manipulator
+source install/setup.bash && ros2 pkg list | grep -E "mobile_manipulator|husky_description"
 ```
 
 ---
 
-## Phase 2: Robot Description (URDF/Xacro)
+## Phase 2: Robot Description (URDF/Xacro)  ✅ complete
 **Task Prompt**:
 ```text
 In ~/mobile_manipulator_ws/src/mobile_manipulator_description, build a
-Xacro robot description that composes vendor_base_description (husky_description)
-and ros-humble-ur-description: a mobile base with a UR5 arm mounted on top
-via a mounting-plate xacro (top_plate_link -> ur5 base_link), a Robotiq 2F-85
-gripper on tool0, and a RealSense D435i mounted at the wrist via a xacro macro,
-publishing camera_link and camera_color_optical_frame per REP-103 conventions.
-No "husky" anywhere in custom filenames or macro names. Provide a view_robot.launch.py.
+Xacro robot description that composes the vendor packages husky_description
+(cloned in src/), ur_description, robotiq_description and
+realsense2_description: a mobile base with a UR5 arm mounted on top via a
+mounting-plate xacro (top_plate_link -> arm mounting plate -> UR5 base_link),
+a Robotiq 2F-85 gripper on tool0 via the ur_to_robotiq adapter, and a
+RealSense D435i mounted at the wrist via a xacro macro, publishing
+camera_link and camera_color_optical_frame per REP-103 conventions.
+arm_prefix MUST be non-empty (arm_) or the UR5 base_link collides with the
+mobile base's. Suppress the vendor ros2_control tags (Phase 3 adds ours).
+No "husky" in anything we author. Provide a view_robot.launch.py.
 Verify with `xacro urdf/mobile_manipulator.urdf.xacro | check_urdf /dev/stdin`.
 ```
 **Terminal Verification**:
 ```bash
 cd ~/mobile_manipulator_ws && source install/setup.bash
-xacro src/mobile_manipulator_description/urdf/mobile_manipulator.urdf.xacro | check_urdf /dev/stdin
+xacro src/mobile_manipulator_description/urdf/mobile_manipulator.urdf.xacro sensor_arch:=0 > /tmp/mm.urdf
+check_urdf /tmp/mm.urdf          # 55 links / 54 joints, rooted at base_footprint
 ros2 launch mobile_manipulator_description view_robot.launch.py
 ```
 
 ---
 
-## Phase 3: ros2_control
+## Phase 3: ros2_control  ✅ complete
 **Task Prompt**:
 ```text
 In mobile_manipulator_description, add a <ros2_control> tag using
-mock_components/GenericSystem hardware interface covering wheels, UR5 joints,
-and gripper. Write mobile_manipulator_controllers.yaml configuring:
-joint_state_broadcaster, diff_drive_controller, joint_trajectory_controller,
+mock_components/GenericSystem hardware interface covering the 4 wheels, the 6
+UR5 joints, and the gripper's actuated + 5 mimic joints. Write
+mobile_manipulator_controllers.yaml configuring: joint_state_broadcaster,
+diff_drive_controller, joint_trajectory_controller (arm_controller),
 and gripper_action_controller. Provide control_test.launch.py.
 Verify with `ros2 control list_controllers` (all must show `active`).
 ```
 **Terminal Verification**:
 ```bash
-ros2 launch mobile_manipulator_description control_test.launch.py
+setsid nohup ros2 launch mobile_manipulator_description control_test.launch.py \
+  > /tmp/control_test.log 2>&1 < /dev/null &
 ros2 control list_controllers
+# cmd_vel needs BEST_EFFORT QoS and the _unstamped topic:
+ros2 topic pub --rate 10 --qos-reliability best_effort \
+  /diff_drive_controller/cmd_vel_unstamped geometry_msgs/msg/Twist "{linear: {x: 0.5}}"
+# gripper action is gripper_cmd on Humble:
+ros2 action send_goal /gripper_action_controller/gripper_cmd \
+  control_msgs/action/GripperCommand "{command: {position: 0.05, max_effort: 100}}"
 ```
+See `03_phase3_ros2_control.md` for the full gotcha list (`position_feedback: false`,
+`ParameterValue(value_type=str)`, pgrep truncation, …).
 
 ---
 
-## Phase 4: Gazebo Warehouse World
+## Phase 4: Gazebo Warehouse World  ✅ complete
 **Task Prompt**:
 ```text
-In mobile_manipulator_gazebo, create warehouse.world: a Gazebo world with a
+In mobile_manipulator_gazebo, create warehouse.world: a Gazebo Classic world with a
 warehouse floor plan (2+ storage-rack aisles, pallets, barrier obstacles, pick table,
-drop table). Add gazebo_warehouse.launch.py that starts Gazebo and spawns the robot
-using gazebo_ros2_control. Verify real-time factor > 0.7 and stable spawn.
+drop table, colored target primitives, tuned lighting), composed from existing
+model:// database models. Add gazebo_warehouse.launch.py that starts Gazebo and spawns
+the robot at a named home pose using gazebo_ros2_control (use_gazebo:=true), with the
+controller manager running inside gzserver. Verify real-time factor > 0.7 and stable spawn.
 ```
 **Terminal Verification**:
 ```bash
-ros2 launch mobile_manipulator_gazebo gazebo_warehouse.launch.py
-gz stats
+setsid nohup ros2 launch mobile_manipulator_gazebo gazebo_warehouse.launch.py \
+  > /tmp/gazebo_warehouse.log 2>&1 < /dev/null &
+gz stats                       # RTF > 0.7
+ros2 control list_controllers  # all 4 active (manager lives inside gzserver)
+ros2 run mobile_manipulator_gazebo capture_screenshot.py \
+  --topic /phase4_camera/image_raw --out /tmp/phase4_home_pose.png --settle 2
 ```
+See `04_phase4_gazebo_world.md` for the full gotcha list (`GAZEBO_MODEL_PATH`,
+`HUSKY_GAZEBO_PLUGINS=0`, URDF comment stripping, no depth-camera plugin, …).
 
 ---
 

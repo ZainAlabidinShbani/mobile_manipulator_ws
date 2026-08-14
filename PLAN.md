@@ -529,11 +529,11 @@ cycles complete, reporting the per-cycle summary for all 5.
 
 ## 14. Quick-reference checklist
 
-- [ ] Preflight deps installed, confirmed with `ros2 pkg list`
+- [x] Preflight deps installed, confirmed with `ros2 pkg list`
 - [x] Phase 1 — Package skeletons build cleanly
-- [x] Phase 2 — URDF parses, RViz shows correct assembled robot
-- [ ] Phase 3 — ros2_control hardware interface & controllers active on mock hardware
-- [ ] Phase 4 — Gazebo RTF > 0.7, robot stable on spawn
+- [x] Phase 2 — URDF parses (55 links / 54 joints), RViz shows correct assembled robot
+- [x] Phase 3 — ros2_control hardware interface & controllers active on mock hardware
+- [x] Phase 4 — Gazebo RTF > 0.7, robot stable on spawn
 - [ ] Phase 5 — MoveIt2 plans + executes against live Gazebo arm
 - [ ] Phase 6 — Nav2 drives a hardcoded goal through the warehouse
 - [ ] Phase 7 — YOLO detects + TF position within a few cm of ground truth
