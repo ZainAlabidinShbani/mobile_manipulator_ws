@@ -59,15 +59,30 @@ diff_drive_controller:
     wheel_separation: 0.5118
     wheel_radius: 0.1651
     # Skid-steer slip compensation: rotating drags four fixed wheels sideways,
-    # so the effective track is wider than the geometric 0.5118 m.  Measured
-    # against Gazebo ground truth on this world's slab (mu2=0.15 patch in
-    # husky_description/urdf/wheel.urdf.xacro): a measured wheel differential
-    # of 0.275 m/s produces a body yaw of 0.393 rad/s, i.e. an effective track
-    # of 0.70 m = 1.37 x geometric.  This value is what makes /odom's yaw match
-    # reality — Clearpath's 1.875 (real Husky, loose ground) makes odometry
-    # under-report yaw by 27 %, which is far too much for the SLAM scan matcher
-    # to absorb and it diverges within one turn.
-    wheel_separation_multiplier: 1.37
+    # so the effective track differs from the geometric 0.5118 m.  This value
+    # is what makes /odom's yaw match reality; get it wrong and slam_toolbox
+    # diverges within one turn while reporting no errors at all.
+    #
+    # RE-MEASURED FOR GAZEBO FORTRESS (DART).  The previous 1.37 was fitted
+    # against Gazebo Classic's ODE solver, where the effective track measured
+    # 0.70 m.  DART resolves the same mu1=1.0 / mu2=0.15 wheel contact into
+    # noticeably less lateral scrub, so the effective track is 0.5573 m and
+    # the multiplier is 1.0889.
+    #
+    # Method (four in-place spins at +/-0.6 rad/s, ground truth from the gz
+    # transport pose topic, never from /odom since /odom is the thing being
+    # calibrated):
+    #     body yaw / commanded yaw = 1.005   <- physics tracks commands
+    #     odom yaw / commanded yaw = 0.799   <- odometry under-reports 20.5 %
+    #     b_effective = 0.5118 * 1.37 * 0.799 / 1.005 = 0.5573 m
+    # Under 1.37 that 20.5 % bias rotated the SLAM map frame 17.7 deg away
+    # from the world frame over one mapping loop, which is what broke the
+    # Phase 6 gate after the migration.
+    #
+    # Note the anisotropic wheel friction IS honoured by DART: with mu2 back
+    # at 1.0 the body only achieves 0.31 of commanded yaw, so the mu2=0.15
+    # patch in husky_description/urdf/wheel.urdf.xacro remains load-bearing.
+    wheel_separation_multiplier: 1.0889
 
     use_stamped_vel: false
     publish_rate: 50.0
