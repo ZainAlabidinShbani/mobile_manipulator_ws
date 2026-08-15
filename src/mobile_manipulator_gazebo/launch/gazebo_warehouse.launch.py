@@ -137,18 +137,22 @@ def generate_launch_description():
         output='screen',
     )
 
-    # ── Clock bridge ─────────────────────────────────────────────────────────
-    # Load-bearing: gz-sim owns simulation time and publishes it on the gz
-    # transport topic /clock.  Without this bridge every use_sim_time node
-    # (robot_state_publisher, the controller manager's own clock, MoveIt,
-    # Nav2, the perception node) sits at t=0 forever.  Classic got this from
-    # the gazebo_ros_init plugin, which has no Fortress equivalent.
-    # Direction is gz -> ROS only ("[") so nothing can publish time back.
-    clock_bridge = Node(
+    # ── gz <-> ROS topic bridge ──────────────────────────────────────────────
+    # Fortress sensors publish only on gz transport, so every topic the ROS
+    # side consumes crosses here: /clock, the D435i colour/depth/camera_info
+    # trio, /scan, and the world-fixed screenshot camera.  The ROS-side names
+    # are frozen to the Classic ones — see config/ros_gz_bridge.yaml, which
+    # also explains why /joint_states must NOT be bridged.
+    #
+    # /clock in particular is load-bearing: gz-sim owns simulation time, and
+    # Classic's gazebo_ros_init plugin has no Fortress equivalent, so without
+    # the bridge every use_sim_time node sits at t=0 forever.
+    bridge_config = PathJoinSubstitution([gazebo_pkg, 'config', 'ros_gz_bridge.yaml'])
+    gz_ros_bridge = Node(
         package='ros_gz_bridge',
         executable='parameter_bridge',
-        name='clock_bridge',
-        arguments=['/clock@rosgraph_msgs/msg/Clock[ignition.msgs.Clock'],
+        name='gz_ros_bridge',
+        parameters=[{'config_file': bridge_config, 'use_sim_time': True}],
         output='screen',
     )
 
@@ -225,7 +229,7 @@ def generate_launch_description():
         declare_home_yaw,
         declare_gui,
         gazebo,
-        clock_bridge,
+        gz_ros_bridge,
         robot_state_publisher,
         spawn_robot,
         chain_spawn,

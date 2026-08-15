@@ -1,0 +1,75 @@
+# ros_gz_bridge.yaml
+# ─────────────────────────────────────────────────────────────────────────────
+# gz transport <-> ROS 2 topic bridge for the warehouse simulation.
+#
+# Under Gazebo Classic each sensor carried its own gazebo_ros plugin which
+# published straight into the ROS graph.  Fortress sensors publish only on gz
+# transport, so every topic the ROS side consumes has to be listed here.
+#
+# The gz_topic_name values are set by <topic> in
+# mobile_manipulator_description/urdf/gazebo.xacro (robot sensors) and in
+# mobile_manipulator_gazebo/worlds/warehouse.world (phase4 camera).  Change
+# one and you must change the other.
+#
+# ros_topic_name values are FROZEN: yolo_perception_node.py, nav2_params.yaml
+# and capture_screenshot.py all hardcode them, and preserving them is what
+# makes this migration invisible to Phases 6 and 7.
+#
+# Everything is GZ_TO_ROS.  Nothing in this workspace publishes back into the
+# simulator over the bridge -- base velocity commands reach the wheels through
+# gz_ros2_control, not through here.
+#
+# /joint_states deliberately has NO entry: gz_ros2_control runs
+# controller_manager as a native ROS 2 node, so joint_state_broadcaster
+# already publishes it on the ROS side.  Bridging gz's own joint topic would
+# put a second, competing publisher on /joint_states.
+# ─────────────────────────────────────────────────────────────────────────────
+
+# ── Simulation clock ─────────────────────────────────────────────────────────
+# Load-bearing. gz-sim owns sim time; without this every use_sim_time node
+# (MoveIt, Nav2, the perception node, robot_state_publisher) sits at t=0.
+# Classic got this from the gazebo_ros_init plugin, which has no equivalent.
+- ros_topic_name: "/clock"
+  gz_topic_name: "/clock"
+  ros_type_name: "rosgraph_msgs/msg/Clock"
+  gz_type_name: "ignition.msgs.Clock"
+  direction: GZ_TO_ROS
+
+# ── D435i wrist camera: colour ───────────────────────────────────────────────
+- ros_topic_name: "/camera/color/image_raw"
+  gz_topic_name: "/camera/color/image_raw"
+  ros_type_name: "sensor_msgs/msg/Image"
+  gz_type_name: "ignition.msgs.Image"
+  direction: GZ_TO_ROS
+
+# gz publishes camera_info as a sibling of the image topic, so this name is
+# produced by <topic>camera/color/image_raw</topic> and not authored directly.
+- ros_topic_name: "/camera/color/camera_info"
+  gz_topic_name: "/camera/color/camera_info"
+  ros_type_name: "sensor_msgs/msg/CameraInfo"
+  gz_type_name: "ignition.msgs.CameraInfo"
+  direction: GZ_TO_ROS
+
+# ── D435i wrist camera: depth ────────────────────────────────────────────────
+# 32FC1 metres, same FOV/resolution as the colour sensor and mounted on the
+# same frame, so colour intrinsics back-project the depth image directly.
+- ros_topic_name: "/camera/depth/image_raw"
+  gz_topic_name: "/camera/depth/image_raw"
+  ros_type_name: "sensor_msgs/msg/Image"
+  gz_type_name: "ignition.msgs.Image"
+  direction: GZ_TO_ROS
+
+# ── Front 2D lidar ───────────────────────────────────────────────────────────
+# Feeds slam_toolbox, AMCL and both Nav2 costmaps.
+- ros_topic_name: "/scan"
+  gz_topic_name: "/scan"
+  ros_type_name: "sensor_msgs/msg/LaserScan"
+  gz_type_name: "ignition.msgs.LaserScan"
+  direction: GZ_TO_ROS
+
+# ── World-fixed screenshot camera (Phase 4 headless captures) ────────────────
+- ros_topic_name: "/phase4_camera/image_raw"
+  gz_topic_name: "/phase4_camera/image_raw"
+  ros_type_name: "sensor_msgs/msg/Image"
+  gz_type_name: "ignition.msgs.Image"
+  direction: GZ_TO_ROS
