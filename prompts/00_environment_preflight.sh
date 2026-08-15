@@ -20,8 +20,8 @@ sudo apt install -y \
   ros-humble-slam-toolbox \
   ros-humble-ros2-control \
   ros-humble-ros2-controllers \
-  ros-humble-gazebo-ros2-control \
-  ros-humble-gazebo-ros-pkgs \
+  ros-humble-gz-ros2-control \
+  ros-humble-ros-gz \
   ros-humble-xacro \
   ros-humble-joint-state-publisher-gui \
   ros-humble-tf2-tools \

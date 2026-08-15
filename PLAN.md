@@ -49,7 +49,8 @@ sudo apt install -y \
   ros-humble-moveit ros-humble-moveit-setup-assistant \
   ros-humble-nav2-bringup ros-humble-navigation2 \
   ros-humble-slam-toolbox \
-  ros-humble-ros2-control ros-humble-ros2-controllers ros-humble-gazebo-ros2-control ros-humble-gazebo-ros-pkgs \
+  ros-humble-ros2-control ros-humble-ros2-controllers \
+  ros-humble-ros-gz ros-humble-gz-ros2-control \
   ros-humble-xacro ros-humble-joint-state-publisher-gui \
   ros-humble-tf2-tools ros-humble-tf-transformations \
   python3-colcon-common-extensions python3-rosdep
@@ -224,26 +225,30 @@ husky_ur5_bringup/launch/
 **Test / gate:**
 ```bash
 ros2 launch husky_ur5_bringup gazebo_warehouse.launch.py
-# check real-time factor
-gz stats
+# check real-time factor (Fortress; `gz stats` was Gazebo Classic)
+ign topic -e -t /world/warehouse/stats
 # confirm robot spawned upright, not falling through floor or exploding
 ```
 Pass = Gazebo real-time factor stays above ~0.7, robot sits stably at the home pose for 30s with zero commanded velocity (this confirms the Phase 2 inertials were sane).
 
 **Antigravity task prompt (Phase 4):**
 ```
-In husky_ur5_bringup, create warehouse.world: a Gazebo Classic (or Ignition,
-match whatever gazebo_ros_pkgs version is installed) world with a warehouse
+In husky_ur5_bringup, create warehouse.world: a Gazebo Fortress (gz-sim 6,
+via ros_gz) world with a warehouse
 floor plan containing 2+ storage-rack aisles, wooden pallets, and barrier
 obstacles, composed from existing Gazebo/Fuel models (do not hand-author
 mesh geometry). Include a pick-up workbench with 2-3 spawned target objects
 (cube, cylinder, box primitives with distinct colors for YOLO to
 distinguish) and a separate drop-off table, plus a directional light and
 ambient light tuned so the RGB camera feed is not blown out or too dark.
-Add gazebo_warehouse.launch.py that starts Gazebo with this world, spawns
-the husky_ur5 robot (from Phase 2/3) at a named "home" pose using the
-ros2_control Gazebo plugin (gazebo_ros2_control) instead of mock hardware.
-Verify with `gz stats` showing real-time factor > 0.7 and confirm via a
+Add gazebo_warehouse.launch.py that starts Gazebo with this world via
+ros_gz_sim's gz_sim.launch.py, spawns the husky_ur5 robot (from Phase 2/3)
+at a named "home" pose with the `ros_gz_sim create` executable, using the
+ros2_control Gazebo plugin (gz_ros2_control) instead of mock hardware.
+Remember the world must load the Sensors system plugin explicitly or no
+camera or lidar will ever publish, and that every sensor topic needs a
+ros_gz_bridge entry -- including /clock, without which nothing steps.
+Verify with real-time factor > 0.7 and confirm via a
 screenshot that the robot is standing stably (not falling through the
 floor or jittering) 30 seconds after spawn with zero commanded velocity.
 ```
@@ -373,18 +378,19 @@ mobile_manipulator_perception/models/
 four are silent failures — the node runs perfectly while seeing nothing:
 
 - **There was no depth stream.** `gazebo.xacro` only ever declared the colour
-  camera. It now also declares a `<sensor type="depth">` served by
-  `libgazebo_ros_camera.so` (`libgazebo_ros_depth_camera.so` is not in the
-  Humble binaries; `gazebo_plugins::GazeboRosCamera` derives from
-  `gazebo::DepthCameraPlugin` and covers depth sensors too). It is mounted on
+  camera. It now also declares a `<sensor type="depth_camera">` rendered by
+  the gz-sim Sensors system and carried into ROS by ros_gz_bridge (under
+  Gazebo Classic this was `<sensor type="depth">` served by
+  `libgazebo_ros_camera.so`). It is mounted on
   the *colour* frame at the same FOV and resolution, so depth pixel (u,v) is
   colour pixel (u,v) and one CameraInfo back-projects both.
 - **The wrist camera pointed 90° off its lens axis.** URDF→SDF fixed-joint
   lumping *discards* a `<pose>` authored on a `<sensor>` and substitutes the
   referenced frame's own transform, so the only way to aim a Gazebo camera is
   to reference a frame that is already X-forward. Both sensors now reference
-  `camera_color_frame`, keeping `<frame_name>camera_color_optical_frame</...>`
-  for the published headers.
+  `camera_color_frame`, keeping `camera_color_optical_frame` for the
+  published headers -- under Fortress that is set with
+  `<ignition_frame_id>`, not Classic's `<frame_name>`.
 - **The bench targets were undetectable by a COCO model.** The world's original
   red cube / blue cylinder / green box were chosen "so YOLO can tell them
   apart", but stock `yolov8n.pt` classifies by learned category, not colour,
@@ -392,10 +398,12 @@ four are silent failures — the node runs perfectly while seeing nothing:
   tabletop itself scored 0.82 as "bed". They are now three 75 mm spheres,
   which read as COCO **"sports ball"** at 0.67–0.89 from the same viewpoint and
   still fit the Robotiq 2F-85's 85 mm stroke.
-- **gzclient starves the sensor renderer.** Running the Gazebo GUI alongside
+- **The Gazebo GUI starves the sensor renderer.** Running it alongside
   the two 640x480 wrist cameras drops them from ~6 Hz to under 0.3 Hz on an
-  8-core box. `gazebo_warehouse.launch.py` gained a `gui` argument; Phase 7
-  runs with `gui:=false`.
+  8-core box. Under Fortress `gui:=false` maps to the gz_args `-s` flag
+  (server only) rather than skipping a separate gzclient process.
+  `gazebo_warehouse.launch.py` gained a `gui` argument; Phase 7 runs with
+  `gui:=false`.
 
 **Test / gate:**
 ```bash
@@ -425,17 +433,22 @@ The annotated window shows `sports ball 0.89` / `sports ball 0.67` on two balls
 (plus a harmless `bed 0.56` on the tabletop), with the locked target boxed in
 red and its 3D point printed on the frame.
 
-**Open follow-up for Phase 8 — the parked base will not stay parked.** Whenever
-the arm holds an extended pose the base rolls backwards at ~1 cm/s and then,
-after ~25 s, lurches ~0.4 m sideways and yaws ~0.65 rad. It is genuinely
-rolling — `/odom` sees it — because the arm's `position` command interface has
-no PID, so gazebo_ros2_control holds the joints with a kinematic
+**Follow-up for Phase 8 — RESOLVED by the Gazebo Fortress migration.** Under
+Gazebo Classic the parked base would not stay parked: whenever the arm held an
+extended pose it rolled backwards at ~1 cm/s and then, after ~25 s, lurched
+~0.4 m sideways and yawed ~0.65 rad. It was genuinely rolling — `/odom` saw it
+— because the arm's `position` command interface has no PID, so
+gazebo_ros2_control held the joints with a kinematic
 `gazebo::physics::Joint::SetPosition` every cycle rather than a torque, and the
-wheels are held the same kinematic way and cannot absorb the reaction.
-`phase7_look_pose --hold` closes a P loop on `/odom` to pin the base for the
-duration of the gate, which is enough for perception but not for grasping.
-Phase 8 should fix the cause (PID/effort control on the arm joints) rather than
-lean on the workaround.
+wheels were held the same kinematic way and could not absorb the reaction.
+
+Re-measured on Fortress with the same look pose, the base is static: the
+`camera_color_optical_frame -> object_target_frame` transform has peak-to-peak
+**0.0000 m** on every axis over 20 samples / 10 s. gz_ros2_control's
+GazeboSimSystem drives the joints through the physics engine rather than by
+kinematic teleport, so the reaction is absorbed normally. `phase7_look_pose
+--hold` still station-keeps on `/odom` but is no longer load-bearing, and
+Phase 8 no longer needs to fix arm effort control before it can grasp.
 
 **Antigravity task prompt (Phase 7):**
 ```
@@ -624,7 +637,8 @@ cycles complete, reporting the per-cycle summary for all 5.
       disabled pairs from the Setup Assistant's default sampling, execution via
       `arm_controller` + `gripper_action_controller`.  Open follow-ups for
       Phase 6/8, both rooted in Phase 3/4 rather than in MoveIt:
-        (a) gazebo_ros2_control publishes the Robotiq mimic joints as
+        (a) gz_ros2_control (gazebo_ros2_control pre-migration) publishes
+            the Robotiq mimic joints as
             `<joint>_mimic`, names absent from the URDF — move_group logs an
             error per /joint_states message and aborts outright if a client
             echoes those names back in a RobotState;
@@ -659,8 +673,9 @@ cycles complete, reporting the per-cycle summary for all 5.
       Four things had to be fixed before any of that could work, none of them
       in the node:
         (a) there was no depth stream at all.  `gazebo.xacro` now declares a
-            `<sensor type="depth">` served by `libgazebo_ros_camera.so`
-            (`libgazebo_ros_depth_camera.so` is not in the Humble binaries);
+            `<sensor type="depth_camera">` rendered by the gz-sim Sensors
+            system and bridged by ros_gz_bridge (pre-migration this was
+            `<sensor type="depth">` on `libgazebo_ros_camera.so`);
         (b) the wrist camera was pointing 90° off its own lens axis.  A sensor
             under `<gazebo reference="...">` has its authored `<pose>`
             *discarded* by URDF→SDF fixed-joint lumping, so the referenced
@@ -672,15 +687,64 @@ cycles complete, reporting the per-cycle summary for all 5.
             1–3 % confidence while the tabletop scored 0.82 as "bed".  They are
             now three 75 mm spheres — COCO "sports ball" at 0.67–0.89, still
             inside the 2F-85's 85 mm stroke;
-        (d) gzclient was starving the sensor renderer.  Launch with
-            `gui:=false` (new argument) or the wrist cameras fall from ~6 Hz to
+        (d) the Gazebo GUI was starving the sensor renderer.  Launch with
+            `gui:=false` (new argument; under Fortress it maps to the gz_args
+            `-s` server-only flag) or the wrist cameras fall from ~6 Hz to
             under 0.3 Hz and the detector sees almost nothing.
-      Open follow-up for Phase 8: the parked base **rolls backwards ~1 cm/s and
-      then lurches ~0.4 m / 0.65 rad after ~25 s** whenever the arm holds an
-      extended pose, because the arm's position command interface has no PID so
-      gazebo_ros2_control holds it with kinematic `Joint::SetPosition`.
-      `phase7_look_pose --hold` station-keeps on `/odom` as a workaround; a
-      grasp phase needs this fixed properly.)
+      Follow-up for Phase 8 **resolved by the Fortress migration**: under
+      Gazebo Classic the parked base rolled backwards ~1 cm/s and then lurched
+      ~0.4 m / 0.65 rad after ~25 s whenever the arm held an extended pose,
+      because gazebo_ros2_control held the un-PID'd position interface with
+      kinematic `Joint::SetPosition`. Re-measured on Fortress the base is
+      static: transform peak-to-peak **0.0000 m** over 20 samples / 10 s with
+      the arm at the look pose. `phase7_look_pose --hold` is retained but is
+      no longer load-bearing.)
+- [x] **Gazebo Classic → Fortress migration** (Classic reached EOL Jan 2025).
+      `gazebo_ros_pkgs`/`gazebo_ros2_control` → `ros_gz_sim`/`ros_gz_bridge`/
+      `gz_ros2_control`, all from packages.ros.org (Fortress 6.18.0 is mirrored
+      there, so no osrfoundation repo and no conflict with the existing
+      ros-humble-* moveit/nav2/ur_description binaries).  Note the Fortress CLI
+      is `ign gazebo`, **not** `gz sim` — `/usr/bin/gz` still belongs to Classic,
+      which remains installed alongside.  What changed:
+        * `gz_sim.launch.py` + `ros_gz_sim create` replace `gazebo.launch.py` +
+          `spawn_entity.py`; `-entity` became `-name`; `GAZEBO_MODEL_PATH`
+          became `IGN_GAZEBO_RESOURCE_PATH`.
+        * The world must load Physics / UserCommands / SceneBroadcaster /
+          **Sensors** explicitly.  Sensors is never implicit, and without it
+          every camera and the lidar stay silent while the sim looks healthy.
+        * Sensors lost their per-sensor ROS plugins; topic names come from
+          `<topic>` and frame_ids from `<ignition_frame_id>`, mapped to frozen
+          ROS names in `mobile_manipulator_gazebo/config/ros_gz_bridge.yaml`.
+          `/clock` must be bridged or every use_sim_time node sits at t=0.
+        * Ogre `<material><script>` is unsupported; the world's 10 blocks became
+          PBR.  Models vendored from `~/.gazebo/models` still carry Ogre scripts
+          and therefore render **black**, which darkens the scene.
+        * Ground truth: `gz model -m <name> -p` no longer exists.  Both gate
+          scripts now read `/world/warehouse/pose/info` (pose/info, not
+          dynamic_pose/info — the latter omits a parked robot).
+        * **Odometry had to be recalibrated.** `wheel_separation_multiplier`
+          1.37 encoded ODE's 0.70 m effective track; DART's is 0.5573 m, so the
+          value is now **1.0889**.  Under 1.37 /odom under-reported yaw by
+          20.5 %, which rotated the SLAM map frame 17.7° off the world frame and
+          broke the Phase 6 gate.  `maps/warehouse.{pgm,yaml}` regenerated on
+          Fortress.  The wheel `mu2` 0.15 patch is still load-bearing — DART does
+          honour anisotropic friction (with mu2 back at 1.0 the body reaches only
+          0.31 of commanded yaw).
+      Re-gated after migration: Phase 3 controllers all active; RTF 0.995;
+      camera/depth/camera_info steady at 6.6–8.0 Hz; Phase 6 final pose error
+      **0.104 m / 0.130 rad** (better than Classic's 0.245 m), collision-free;
+      Phase 7 **2.2 mm** against `target_ball_green`, transform peak-to-peak
+      0.0000 m.
+      Two known issues carried forward:
+        (a) YOLO confidence on the target spheres fell from 0.67–0.89 to **0.35**
+            with only 1 of 3 balls detected, because the vendored `model://`
+            furniture renders black.  Giving those models PBR materials (or
+            raising scene light) should restore it; matters for Phase 8 PERCEIVE.
+        (b) The **return** leg (pick table → origin) threads the 0.934 m barrier
+            gate east-to-west very slowly — 16.6 m driven for a 2.71 m plan, 172
+            replans — and exceeds `phase6_nav_goal.py`'s timeout.  It does
+            converge (0.173 m) and is collision-free.  Phase 8 RETURN_HOME needs
+            a longer allowance.
 - [ ] Phase 8 — orchestrator dry-run: full sequence + failure path both correct
 - [ ] Phase 9 — one full real cycle succeeds end-to-end
 - [ ] Phase 10 — `colcon test` all green

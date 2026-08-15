@@ -5,7 +5,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## What this is
 
 A ROS 2 **Humble** colcon workspace (Ubuntu 22.04, user shell is zsh) building a warehouse
-pick-and-place mobile manipulator in **Gazebo Classic**: Clearpath Husky base + UR5 arm +
+pick-and-place mobile manipulator in **Gazebo Fortress** (gz-sim 6, via ros_gz): Clearpath Husky base + UR5 arm +
 Robotiq 2F-85 gripper + RealSense D435i wrist camera, driven by ros2_control, MoveIt 2,
 Nav2, a YOLOv8 perception node, and a state-machine orchestrator.
 
@@ -16,8 +16,15 @@ starting a phase**; it usually already documents the traps.
 
 Status (checklist lives in `PLAN.md` §14, keep it updated): Phases 1–7 complete
 (bootstrap, description, ros2_control, Gazebo world, MoveIt 2 config, Nav2, YOLOv8
-perception). Phases 8–11 pending — `mobile_manipulator_orchestrator` is a
-deliberately empty skeleton awaiting its phase.
+perception), **and the whole stack has been migrated from Gazebo Classic (EOL
+Jan 2025) to Gazebo Fortress + ros_gz** and re-gated. Phases 8–11 pending —
+`mobile_manipulator_orchestrator` is a deliberately empty skeleton awaiting its
+phase.
+
+**The Fortress CLI is `ign gazebo`, not `gz sim`** (that spelling is Garden and
+later). `/usr/bin/gz` still belongs to Gazebo Classic, which remains installed
+alongside — so a stray `gz stats` or `gz model` will appear to "work" and then
+silently tell you nothing about the running simulation.
 
 ## Non-negotiable project rules (`.agents/rules/instructions.md`)
 
@@ -57,7 +64,7 @@ ros2 control list_controllers                                        # all 4 mus
 
 # Phase 4 gate — Gazebo warehouse
 ros2 launch mobile_manipulator_gazebo gazebo_warehouse.launch.py
-gz stats                                                             # RTF > 0.7
+ign topic -e -t /world/warehouse/stats                               # RTF > 0.7
 ros2 run mobile_manipulator_gazebo capture_screenshot.py \
   --topic /phase4_camera/image_raw --out /tmp/phase4_home_pose.png   # headless screenshot
 
@@ -82,6 +89,10 @@ pkill -f "[h]ome_hold"
 ros2 run mobile_manipulator_perception phase7_look_pose --hold 120 --ros-args -p use_sim_time:=true
 ros2 run mobile_manipulator_perception phase7_target_check --duration 10 --ros-args -p use_sim_time:=true
 ros2 run tf2_ros tf2_echo camera_color_optical_frame object_target_frame
+
+# Ground truth (Classic's `gz model -m <name> -p` does not exist in Fortress).
+# Use pose/info, NOT dynamic_pose/info — the latter omits a parked robot.
+ign topic -e -t /world/warehouse/pose/info -n 1
 
 # Re-map the warehouse (only needed if the world changes)
 ros2 launch mobile_manipulator_navigation slam.launch.py
@@ -123,26 +134,29 @@ with the Husky's. Controller YAML, MoveIt SRDF, and any new code must use the pr
 joint names (`arm_shoulder_pan_joint`, `gripper_robotiq_85_left_knuckle_joint`, …).
 
 Key xacro args: `use_gazebo` (false → mock hardware; true → Gazebo backend + sensors),
-`controllers_yaml` (absolute path, injected by the Gazebo launch — gzserver cannot resolve
-`$(find ...)` inside plugin SDF), `sensor_arch:=0` (suppresses the Husky's decorative arch,
+`controllers_yaml` (absolute path, injected by the Gazebo launch — the gz-sim server
+cannot resolve `$(find ...)` inside plugin SDF), `sensor_arch:=0` (suppresses the Husky's decorative arch,
 which the arm mount replaces).
 
 ### The `use_gazebo` switch
 
 `urdf/ros2_control.xacro` declares three `<ros2_control>` systems (`base_system`,
 `arm_system`, `gripper_system`) with identical joint layouts under both backends —
-`mock_components/GenericSystem` (Phase 3 bench) or `gazebo_ros2_control/GazeboSystem`
+`mock_components/GenericSystem` (Phase 3 bench) or `gz_ros2_control/GazeboSimSystem`
 (Phase 4+). `urdf/gazebo.xacro` is emitted only under `use_gazebo:=true` and adds the
-`gazebo_ros2_control` model plugin plus the D435i RGB sensor. **Any new joint must be added
+`libgz_ros2_control-system.so` plugin (addressed by its class name,
+`gz_ros2_control::GazeboSimROS2ControlPlugin`) plus the D435i colour and depth
+sensors and the 2D lidar. **Any new joint must be added
 to both the URDF and the matching `<ros2_control>` block, and to
 `config/mobile_manipulator_controllers.yaml`.**
 
 Two different controller-manager topologies follow from this:
 - **Mock (`control_test.launch.py`)** — a standalone `ros2_control_node` process.
-- **Gazebo (`gazebo_warehouse.launch.py`)** — the controller manager runs *inside gzserver*
-  via `libgazebo_ros2_control.so`; there is no `ros2_control_node`. Controller spawners are
-  chained with `OnProcessExit` handlers (jsb → diff_drive → arm → gripper) to avoid
-  parameter races.
+- **Gazebo (`gazebo_warehouse.launch.py`)** — the controller manager runs *inside the
+  gz-sim server* via `libgz_ros2_control-system.so`; there is no `ros2_control_node`.
+  Controller spawners are chained with `OnProcessExit` handlers (jsb → diff_drive → arm
+  → gripper) to avoid parameter races. The same launch also starts the
+  `ros_gz_bridge` described below.
 
 ### Controller configuration
 
@@ -158,10 +172,24 @@ these names exactly rather than inventing new ones.
 
 ### Gazebo world (`mobile_manipulator_gazebo`)
 
-`worlds/warehouse.world` is Gazebo Classic SDF: hand-authored slab/walls plus
-`model://bookshelf`, `model://euro_pallet` etc. from `~/.gazebo/models`, target primitives
-on a pick workbench, a drop-off table, and a world-fixed `phase4_camera` used for headless
-screenshots. `scripts/home_hold.py` runs after spawn to publish zero `cmd_vel` (the wheels
+`worlds/warehouse.world` is SDF 1.7 loaded by gz-sim: hand-authored slab/walls plus
+`model://bookshelf`, `model://euro_pallet` etc. from `~/.gazebo/models` (reached through
+`IGN_GAZEBO_RESOURCE_PATH`, which replaced `GAZEBO_MODEL_PATH`), target primitives on a
+pick workbench, a drop-off table, and a world-fixed `phase4_camera` used for headless
+screenshots.
+
+It declares four gz-sim systems explicitly — Physics, UserCommands (this is what serves
+the spawn service `ros_gz_sim create` calls), SceneBroadcaster, and **Sensors**. Sensors
+is never loaded implicitly, and without it every camera and the lidar stay silent while
+the simulation otherwise looks perfectly healthy.
+
+`config/ros_gz_bridge.yaml` maps gz transport topics to their frozen ROS names
+(`/clock`, `/camera/color/image_raw`, `/camera/color/camera_info`,
+`/camera/depth/image_raw`, `/scan`, `/phase4_camera/image_raw`). The gz-side names come
+from `<topic>` in `gazebo.xacro` and the world — change one and you must change the
+other. `/joint_states` is deliberately **not** bridged: gz_ros2_control runs
+controller_manager as a native ROS 2 node, so joint_state_broadcaster already publishes
+it, and a bridge entry would add a second competing publisher. `scripts/home_hold.py` runs after spawn to publish zero `cmd_vel` (the wheels
 free-roll until diff_drive sees its first command) and stow the arm.
 
 ### MoveIt config (`mobile_manipulator_moveit_config`)
@@ -245,68 +273,93 @@ with Gazebo ground truth for `world -> base_footprint` and TF (pure FK) for
 - Gripper action is `/gripper_action_controller/gripper_cmd` on Humble (not
   `gripper_command`).
 - **Under Gazebo, `/joint_states` contains joint names that are not in the URDF.**
-  `libgazebo_hardware_plugins.so` publishes the Robotiq mimic joints as
+  The Gazebo ros2_control backend publishes the Robotiq mimic joints as
   `gripper_robotiq_85_*_joint_mimic`. move_group logs `Joint '..._mimic' not found in
   model` at ~50 Hz, and **crashes** (`terminate called after throwing moveit::Exception`)
   if a client echoes those names back inside a `RobotState`. Always build `RobotState`
   as an arm-only diff (`is_diff = true`, six `arm_*` names). Root cause is in
   `ros2_control.xacro`'s Gazebo backend, not in MoveIt.
-- **The base is not braked**: extending the arm rolls the robot ~0.16 m backwards, and
-  wheel odometry over-reports it (~0.26 m) because the wheels also slip. Validate base and
-  end-effector world positions with `gz model -m mobile_manipulator -p`, never with
-  `/diff_drive_controller/odom`. This will invalidate any grasp pose computed before the
-  arm moves — fix before Phase 8.
+- **The base is not braked**: extending the arm can roll the robot, and wheel odometry
+  over-reports the motion because the wheels also slip. Validate base and end-effector
+  world positions against gz ground truth
+  (`ign topic -e -t /world/warehouse/pose/info -n 1`), never with
+  `/diff_drive_controller/odom`. Classic's `gz model -m <name> -p` no longer exists.
+  *Measured on Fortress the parked base no longer creeps* (0.0000 m peak-to-peak over
+  10 s with the arm at the Phase 7 look pose), because gz_ros2_control drives joints
+  through the physics engine rather than by kinematic teleport.
 - **The base has no laser scanner until `urdf/lidar_2d.xacro` is included** (added in
   Phase 6): front puck, scan plane **0.30 m**, 220° FOV. The FOV cannot exceed ±110°
   at that mount point or the robot scans its own chassis corners (113.7°) and wheel
   tops (127°). Anything shorter than 0.30 m — euro pallets are 0.145 m — is invisible
   to SLAM, AMCL and both costmaps, so Nav2 will plan straight through a pallet.
-- **Skid-steer odometry is only trustworthy after calibration.** `/odom` yaw was 27 %
-  low with Clearpath's `wheel_separation_multiplier: 1.875`; the measured effective
-  track on this slab is 0.70 m, hence **1.37** (with vendor wheel `mu2` patched to
-  **0.15**). Get this wrong and slam_toolbox diverges inside a single turn while
-  reporting no errors. Re-measure with `gz model -m mobile_manipulator -p` after any
-  change to wheel friction, mass, or the arm's stowed pose.
+- **Skid-steer odometry is only trustworthy after calibration, and the calibration is
+  physics-engine specific.** The measured effective track was 0.70 m under Classic's ODE
+  (multiplier 1.37) but is **0.5573 m under Fortress's DART**, so the value is now
+  **1.0889**. Running DART with the ODE figure made `/odom` under-report yaw by 20.5 %,
+  which rotated the SLAM map frame 17.7° off the world frame and broke the Phase 6 gate.
+  Get this wrong and slam_toolbox diverges inside a single turn while reporting no
+  errors. The vendor wheel `mu2` **0.15** patch is still load-bearing — DART does honour
+  anisotropic friction, and with `mu2` back at 1.0 the body reaches only 0.31 of
+  commanded yaw. Re-measure against gz ground truth after any change to wheel friction,
+  mass, the physics engine, or the arm's stowed pose. **Calibrate with in-place spins**:
+  rolling turns from the home pose drive 1.8 m forward into the barrier gate at x = 1.6,
+  and a pinned robot reads as zero body rotation (this produced a nonsense 2.57 m
+  "effective track" on the first attempt).
 - **Rotating in place is the expensive manoeuvre**: a hard stiction deadband below
   ~0.27 rad/s (the base simply does not move, so any tapering P-controller stalls),
   and it walks the base sideways ~0.12 m per radian. Rolling turns track within 2 %.
 - **`home_hold.py` fights any navigation stack** — it publishes zero `cmd_vel` at
   50 Hz. `pkill -f "[h]ome_hold"` before sending goals.
-- A stale `gzserver` holds port 11345 and the next launch dies with `Address already
-  in use` deep in the log. Kill by PID (`pgrep -f gzserver`): `pkill -f` patterns also
-  match the shell running them.
+- **Stale processes from a previous session are the highest-value thing to check
+  first.** Three orphaned `robot_state_publisher` nodes once kept serving an *old*
+  `robot_description`, so `ros_gz_sim create` spawned a stale robot out of a correctly
+  migrated workspace and the logs blamed a plugin that was no longer referenced. Run
+  `ros2 node list` and look for duplicate `robot_state_publisher` entries before
+  believing any plugin-load error. Kill by PID: `pkill -f` / `pgrep -f` patterns also
+  match the shell running them — and note the pattern matches your *whole* command
+  line, so even an `echo "home_hold"` elsewhere in the same command makes
+  `pgrep -f "[h]ome_hold"` match and kill your own shell.
 - **A `<pose>` authored on a `<sensor>` under `<gazebo reference="...">` is
-  discarded.** Every `camera_*` frame reaches its parent through a fixed joint,
+  discarded.** (Still true under Fortress — same sdformat lumping.) Every `camera_*` frame reaches its parent through a fixed joint,
   so URDF→SDF reduction lumps them into `arm_wrist_3_link` and gzsdf substitutes
   the referenced frame's own transform for whatever pose you wrote. The only
   thing that aims a Gazebo camera is the orientation of the frame it references,
   which must be X-forward/Y-left/Z-up — *not* a REP-103 optical frame. Both
   D435i sensors therefore reference `camera_color_frame` while still stamping
-  images `camera_color_optical_frame`. Verify with
-  `gz sdf -p /tmp/mm.urdf | grep -A12 "sensor name='camera_color'"`.
-- **`libgazebo_ros_depth_camera.so` is not in the Humble binaries.** Use
-  `libgazebo_ros_camera.so` with `<sensor type="depth">` —
-  `gazebo_plugins::GazeboRosCamera` derives from `gazebo::DepthCameraPlugin`.
-  Topic names come from `<camera_name>`, not from `<remapping>`.
+  images `camera_color_optical_frame` — under Fortress that stamp comes from
+  `<ignition_frame_id>`, not Classic's `<frame_name>`. Verify with
+  `ign sdf -p /tmp/mm.urdf | grep -A12 "sensor name='camera_color'"`.
+- **Sensors carry no ROS plugin at all under Fortress.** The world-level Sensors
+  system renders them onto gz transport and `ros_gz_bridge` carries them across. Classic
+  type names changed: `depth` → **`depth_camera`**, `ray` → **`gpu_lidar`** (whose
+  parameters live under `<lidar>`, not `<ray>`, and which needs an explicit 1-sample
+  `<vertical>` scan). Topic names come from `<topic>`, not `<camera_name>`/`<remapping>`.
+  A camera publishes its `camera_info` as a sibling of the image topic, so
+  `<topic>camera/color/image_raw</topic>` yields both `/camera/color/image_raw` and
+  `/camera/color/camera_info`.
 - **Run Gazebo with `gui:=false` for anything that reads the wrist cameras.**
-  gzclient renders the whole warehouse and starves gzserver's own sensor
+  (Under Fortress this maps to the gz_args `-s` server-only flag.) The GUI
+  renders the whole warehouse and starves the server's own sensor
   rendering: the two 640x480 wrist cameras fall from ~6 Hz to under 0.3 Hz. It
   only starts when `DISPLAY` is set, so this first bites on a phase that needs a
   display for something else (Phase 7 wants `cv2.imshow`).
-- **The parked base creeps whenever the arm holds an extended pose** — backwards
-  at ~1 cm/s, then a ~0.4 m / 0.65 rad lurch after ~25 s, after which the bench
-  is out of frame. It is genuinely rolling (`/odom` matches ground truth to
-  1 mm), because the arm's `position` command interface has no PID so
-  gazebo_ros2_control holds the joints with kinematic
-  `gazebo::physics::Joint::SetPosition`, and the wheels — held the same
-  kinematic way — cannot absorb the reaction. `phase7_look_pose --hold` closes a
-  P loop on `/odom` as a workaround; Phase 8 needs the cause fixed. Raising
-  `controller_manager.update_rate` from 100 to 500 Hz does **not** help and
-  costs the camera frame rate.
+- **Base creep under an extended arm was a Gazebo Classic problem and is gone.**
+  Classic rolled the parked base backwards at ~1 cm/s and then lurched it ~0.4 m /
+  0.65 rad after ~25 s, because the arm's un-PID'd `position` interface was held with
+  kinematic `Joint::SetPosition` and the wheels could not absorb the reaction. On
+  Fortress the same look pose measures 0.0000 m peak-to-peak over 20 samples / 10 s.
+  `phase7_look_pose --hold` still station-keeps on `/odom` but is no longer required.
 - **A COCO-pretrained YOLO cannot see hand-authored primitives.** `yolov8n.pt`
   scored 1–3 % on the world's original cube/cylinder/box while calling the
   tabletop a `bed` at 0.82. The pick targets are now 75 mm spheres, which read as
-  `sports ball` at 0.67–0.89 and still fit the 2F-85's 85 mm stroke.
+  `sports ball` and still fit the 2F-85's 85 mm stroke.
+- **Ogre `<material><script>` does not exist in Fortress.** The world's own materials
+  were converted to PBR `<ambient>/<diffuse>/<specular>`, but the models vendored from
+  `~/.gazebo/models` (bookshelf, table, pallets…) still carry Ogre scripts and therefore
+  render **black**. That darkened the scene enough to drop sphere detection from
+  0.67–0.89 under Classic to **0.35, with only 1 of 3 balls found** — the Phase 7 gate
+  still passes at 2.2 mm, but Phase 8's PERCEIVE state will want this fixed by giving
+  those models PBR materials or raising the scene lighting.
 - **`cv_bridge` is unusable in this workspace.** Its Humble boost extension is
   built against numpy 1.x while Ultralytics/torch require numpy 2.x; importing it
   yields `AttributeError: _ARRAY_API not found`. Decode `sensor_msgs/Image` with
@@ -324,12 +377,14 @@ with Gazebo ground truth for `world -> base_footprint` and TF (pure FK) for
   `ParameterValue(..., value_type=str)`, else launch dies with "Unable to parse the value
   of parameter robot_description as yaml".
 - `gazebo_warehouse.launch.py` runs `xacro` eagerly via `subprocess` and strips XML
-  comments with a regex: gazebo_ros2_control 0.4.x re-injects `robot_description` as an rcl
-  `--param` override whose YAML lexer chokes on comment characters. Keep that
-  post-processing if you rewrite the launch file.
-- The same launch sets `GAZEBO_MODEL_PATH` (including `src/`) and blanks
-  `GAZEBO_MODEL_DATABASE_URI` — URDF→SDF rewrites `package://` mesh URIs to `model://`, and
-  without these gzserver hangs trying the dead online model database.
+  comments with a regex: the description gets round-tripped through node parameter
+  overrides whose YAML lexer chokes on comment characters (": ", box-drawing glyphs).
+  Keep that post-processing if you rewrite the launch file.
+- The same launch sets `IGN_GAZEBO_RESOURCE_PATH` (and `GZ_SIM_RESOURCE_PATH`,
+  since `gz_sim.launch.py` forwards both), including `~/.gazebo/models` and `src/` —
+  URDF→SDF rewrites `package://` mesh URIs to `model://`, so every directory holding a
+  model must be on that path. `ros_gz_sim`'s launch file *appends* to whatever is
+  already in the environment, so setting these is additive rather than a clobber.
 - It also sets `HUSKY_GAZEBO_PLUGINS=0`, an `optenv` guard added to the vendor
   `husky.urdf.xacro`, disabling the classic `gazebo_ros` diff_drive / joint_state / imu /
   gps plugins that would fight ros2_control over the wheel joints.
@@ -337,7 +392,7 @@ with Gazebo ground truth for `world -> base_footprint` and TF (pure FK) for
 ## Vendor dependencies
 
 `ur_description`, `robotiq_description`, `realsense2_description`, MoveIt, Nav2,
-ros2_control, gazebo_ros_pkgs come from apt (see `PLAN.md` §2 / `prompts/00_environment_preflight.sh`).
+ros2_control, ros_gz + gz_ros2_control come from apt (see `PLAN.md` §2 / `prompts/00_environment_preflight.sh`).
 **`husky_description` is not available on Humble via apt** — it is cloned from
 `github.com/akrbot/husky_description_ros2` into `src/husky_description` as a *nested git
 repo* (a bare gitlink, not a configured submodule), and it carries two local patches
