@@ -33,6 +33,7 @@ Usage (Gazebo warehouse running, robot parked, perception node running):
 import argparse
 import math
 import os
+import re
 import subprocess
 import sys
 import time
@@ -58,32 +59,67 @@ def quat_to_matrix(x, y, z, w):
     ])
 
 
-def rpy_to_matrix(r, p, y):
-    cr, sr, cp, sp, cy, sy = (math.cos(r), math.sin(r), math.cos(p),
-                              math.sin(p), math.cos(y), math.sin(y))
+# Gazebo Fortress ground truth.
+#
+# MIGRATION NOTE: Classic's `gz model -m <name> -p` printed "x y z r p y" and
+# no longer exists -- /usr/bin/gz belongs to Gazebo Classic, and Fortress ships
+# `ign`, which has no `model` verb at all.  The replacement is the pose topic
+# published by the SceneBroadcaster system, whose Pose_V payload carries a
+# quaternion rather than roll/pitch/yaw.
+#
+# Read /world/<world>/pose/info, NOT dynamic_pose/info: the latter only carries
+# entities that moved this step, so a parked robot can be missing from it
+# entirely.
+def _gz_pose_quat(model, world='warehouse', timeout=15.0):
+    """(x, y, z, qx, qy, qz, qw) for a model in the world frame, or None."""
+    try:
+        out = subprocess.run(
+            ['ign', 'topic', '-e', '-t', '/world/%s/pose/info' % world, '-n', '1'],
+            capture_output=True, text=True, timeout=timeout).stdout
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        return None
+
+    def _field(seg, key):
+        # Protobuf text format omits fields equal to their default, so a
+        # missing key means 0.0 -- including w, which is 0 for a 180 deg yaw.
+        m = re.search(r'\b%s:\s*(-?[\d.eE+-]+)' % key, seg)
+        return float(m.group(1)) if m else 0.0
+
+    for block in out.split('pose {')[1:]:
+        m = re.search(r'name:\s*"([^"]+)"', block)
+        if not m or m.group(1) != model:
+            continue
+        pos = re.search(r'position\s*\{(.*?)\}', block, re.S)
+        ori = re.search(r'orientation\s*\{(.*?)\}', block, re.S)
+        if not pos or not ori:
+            continue
+        p, o = pos.group(1), ori.group(1)
+        q = [_field(o, 'x'), _field(o, 'y'), _field(o, 'z'), _field(o, 'w')]
+        n = math.sqrt(sum(v * v for v in q))
+        if n == 0.0:                      # all four omitted == identity
+            q = [0.0, 0.0, 0.0, 1.0]
+        else:
+            q = [v / n for v in q]
+        return (_field(p, 'x'), _field(p, 'y'), _field(p, 'z'), *q)
+    return None
+
+
+def quat_to_matrix(qx, qy, qz, qw):
+    """Rotation matrix from a unit quaternion."""
     return np.array([
-        [cy * cp, cy * sp * sr - sy * cr, cy * sp * cr + sy * sr],
-        [sy * cp, sy * sp * sr + cy * cr, sy * sp * cr - cy * sr],
-        [-sp, cp * sr, cp * cr],
+        [1 - 2 * (qy * qy + qz * qz), 2 * (qx * qy - qz * qw), 2 * (qx * qz + qy * qw)],
+        [2 * (qx * qy + qz * qw), 1 - 2 * (qx * qx + qz * qz), 2 * (qy * qz - qx * qw)],
+        [2 * (qx * qz - qy * qw), 2 * (qy * qz + qx * qw), 1 - 2 * (qx * qx + qy * qy)],
     ])
 
 
 def gazebo_model_pose(model=DEFAULT_MODEL, timeout=10.0):
     """Return the (translation, rotation) of a Gazebo model in the world frame."""
-    try:
-        out = subprocess.run(['gz', 'model', '-m', model, '-p'],
-                             capture_output=True, text=True, timeout=timeout)
-    except (subprocess.TimeoutExpired, FileNotFoundError):
+    r = _gz_pose_quat(model, timeout=timeout)
+    if r is None:
         return None
-    for line in reversed(out.stdout.strip().splitlines()):
-        parts = line.split()
-        if len(parts) == 6:
-            try:
-                v = [float(p) for p in parts]
-            except ValueError:
-                continue
-            return np.array(v[:3]), rpy_to_matrix(*v[3:])
-    return None
+    x, y, z, qx, qy, qz, qw = r
+    return np.array([x, y, z]), quat_to_matrix(qx, qy, qz, qw)
 
 
 def world_targets(world_path, name_filter='target_'):

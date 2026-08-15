@@ -165,14 +165,60 @@ def clearance(pose, obstacles):
 
 
 # ── ground truth ─────────────────────────────────────────────────────────────
-def gz_pose(model='mobile_manipulator'):
+# Gazebo Fortress ground truth.
+#
+# MIGRATION NOTE: Classic's `gz model -m <name> -p` printed "x y z r p y" and
+# no longer exists -- /usr/bin/gz belongs to Gazebo Classic, and Fortress ships
+# `ign`, which has no `model` verb at all.  The replacement is the pose topic
+# published by the SceneBroadcaster system, whose Pose_V payload carries a
+# quaternion rather than roll/pitch/yaw.
+#
+# Read /world/<world>/pose/info, NOT dynamic_pose/info: the latter only carries
+# entities that moved this step, so a parked robot can be missing from it
+# entirely.
+def _gz_pose_quat(model, world='warehouse', timeout=15.0):
+    """(x, y, z, qx, qy, qz, qw) for a model in the world frame, or None."""
     try:
-        out = subprocess.run(['gz', 'model', '-m', model, '-p'],
-                             capture_output=True, text=True, timeout=15).stdout
-        vals = [float(v) for v in out.strip().split('\n')[-1].split()]
-        return vals[0], vals[1], vals[5]
-    except Exception:
+        out = subprocess.run(
+            ['ign', 'topic', '-e', '-t', '/world/%s/pose/info' % world, '-n', '1'],
+            capture_output=True, text=True, timeout=timeout).stdout
+    except (subprocess.TimeoutExpired, FileNotFoundError):
         return None
+
+    def _field(seg, key):
+        # Protobuf text format omits fields equal to their default, so a
+        # missing key means 0.0 -- including w, which is 0 for a 180 deg yaw.
+        m = re.search(r'\b%s:\s*(-?[\d.eE+-]+)' % key, seg)
+        return float(m.group(1)) if m else 0.0
+
+    for block in out.split('pose {')[1:]:
+        m = re.search(r'name:\s*"([^"]+)"', block)
+        if not m or m.group(1) != model:
+            continue
+        pos = re.search(r'position\s*\{(.*?)\}', block, re.S)
+        ori = re.search(r'orientation\s*\{(.*?)\}', block, re.S)
+        if not pos or not ori:
+            continue
+        p, o = pos.group(1), ori.group(1)
+        q = [_field(o, 'x'), _field(o, 'y'), _field(o, 'z'), _field(o, 'w')]
+        n = math.sqrt(sum(v * v for v in q))
+        if n == 0.0:                      # all four omitted == identity
+            q = [0.0, 0.0, 0.0, 1.0]
+        else:
+            q = [v / n for v in q]
+        return (_field(p, 'x'), _field(p, 'y'), _field(p, 'z'), *q)
+    return None
+
+
+def gz_pose(model='mobile_manipulator'):
+    """(x, y, yaw) of a model in the world frame, or None."""
+    r = _gz_pose_quat(model)
+    if r is None:
+        return None
+    x, y, _z, qx, qy, qz, qw = r
+    yaw = math.atan2(2.0 * (qw * qz + qx * qy),
+                     1.0 - 2.0 * (qy * qy + qz * qz))
+    return x, y, yaw
 
 
 def ang_norm(a):
