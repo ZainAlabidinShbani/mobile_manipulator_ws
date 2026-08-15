@@ -12,23 +12,34 @@
        Unlike Classic, the plugin is addressed by its C++ class name
        (gz_ros2_control::GazeboSimROS2ControlPlugin), not an arbitrary one.
 
-    2. D435i RGB camera sensor (libgazebo_ros_camera.so)
+    2. D435i RGB camera sensor (<sensor type="camera">)
        Referenced to camera_color_frame (the colour module's body frame,
-       X-forward) and stamped with frame_name camera_color_optical_frame —
-       see the long comment on that choice inside the macro.
+       X-forward) and stamped with camera_color_optical_frame — see the
+       long comment on that choice inside the macro.
 
-    3. D435i depth sensor (also libgazebo_ros_camera.so, type="depth")
-       Publishes /camera/depth/image_raw (32FC1, metres) registered to the
-       colour stream — see the comment on the sensor block below.
+    3. D435i depth sensor (<sensor type="depth_camera">)
+       Publishes a 32FC1 metric depth image registered to the colour
+       stream — see the comment on the sensor block below.
 
-  NOTE: gazebo_ros camera plugins publish the raw rendered image with no
-  internal flip, and a <pose> authored on a <sensor> under a lumped fixed
-  frame is discarded by gzsdf — the referenced frame's own orientation is
-  the only thing that aims the camera.
-  NOTE: libgazebo_ros_depth_camera.so is NOT shipped by the Humble
-  ros-humble-gazebo-plugins binary, so the depth stream is produced by
-  libgazebo_ros_camera.so instead — gazebo_plugins::GazeboRosCamera derives
-  from gazebo::DepthCameraPlugin and handles <sensor type="depth"> too.
+    4. Front 2D lidar (<sensor type="gpu_lidar">) feeding Nav2.
+
+  MIGRATION NOTE (Gazebo Classic → Fortress):
+  Sensors no longer carry a per-sensor ROS plugin. Under Fortress the
+  world-level Sensors system renders them and publishes on gz transport;
+  ros_gz_bridge then carries each topic into ROS. Consequences:
+    * The Classic type names changed: "depth" → "depth_camera" and
+      "ray" → "gpu_lidar" (whose parameters live under <lidar>, not <ray>).
+    * The ROS topic name is no longer set by <camera_name>/<remapping>.
+      It is the gz <topic> here, mapped to its final ROS name in
+      mobile_manipulator_gazebo/config/ros_gz_bridge.yaml. Change one and
+      you must change the other.
+    * frame_id is no longer <frame_name>. Fortress stamps the sensor's
+      scoped name unless <ignition_frame_id> overrides it, which is what
+      keeps back-projection landing in camera_color_optical_frame.
+      (gz-sensors accepts gz_frame_id too but prefers ignition_frame_id.)
+  NOTE: a <pose> authored on a <sensor> under a lumped fixed frame is
+  still discarded — the referenced frame's own orientation is the only
+  thing that aims the camera, exactly as it was under Classic.
 
   Usage in the top-level xacro (only when use_gazebo:=true):
     <xacro:include filename="$(find mobile_manipulator_description)/urdf/gazebo.xacro"/>
@@ -96,6 +107,8 @@
       <sensor name="${camera_name}_color" type="camera">
         <always_on>true</always_on>
         <update_rate>10</update_rate>
+        <topic>camera/color/image_raw</topic>
+        <ignition_frame_id>${camera_name}_color_optical_frame</ignition_frame_id>
         <camera>
           <horizontal_fov>1.3963</horizontal_fov>
           <image>
@@ -108,15 +121,6 @@
             <far>30.0</far>
           </clip>
         </camera>
-        <plugin name="${camera_name}_color_plugin" filename="libgazebo_ros_camera.so">
-          <ros>
-            <remapping>image_raw:=/camera/color/image_raw</remapping>
-            <remapping>camera_info:=/camera/color/camera_info</remapping>
-          </ros>
-          <camera_name>camera/color</camera_name>
-          <frame_name>${camera_name}_color_optical_frame</frame_name>
-          <hack_baseline>0.07</hack_baseline>
-        </plugin>
       </sensor>
     </gazebo>
 
@@ -147,28 +151,23 @@
          is what yields /camera/depth/image_raw.
          ══════════════════════════════════════════════════════════════════ -->
     <gazebo reference="${camera_name}_color_frame">
-      <sensor name="${camera_name}_depth" type="depth">
+      <sensor name="${camera_name}_depth" type="depth_camera">
         <always_on>true</always_on>
         <update_rate>10</update_rate>
+        <topic>camera/depth/image_raw</topic>
+        <ignition_frame_id>${camera_name}_color_optical_frame</ignition_frame_id>
         <camera>
           <horizontal_fov>1.3963</horizontal_fov>
           <image>
             <width>640</width>
             <height>480</height>
-            <format>R8G8B8</format>
+            <format>R_FLOAT32</format>
           </image>
           <clip>
             <near>0.05</near>
             <far>30.0</far>
           </clip>
         </camera>
-        <plugin name="${camera_name}_depth_plugin" filename="libgazebo_ros_camera.so">
-          <camera_name>camera</camera_name>
-          <frame_name>${camera_name}_color_optical_frame</frame_name>
-          <min_depth>0.05</min_depth>
-          <max_depth>30.0</max_depth>
-          <hack_baseline>0.0</hack_baseline>
-        </plugin>
       </sensor>
     </gazebo>
 
@@ -180,12 +179,13 @@
          lidar_2d.xacro for the mount geometry that guarantees this.
          ══════════════════════════════════════════════════════════════════ -->
     <gazebo reference="${lidar_name}_link">
-      <sensor name="${lidar_name}_2d" type="ray">
+      <sensor name="${lidar_name}_2d" type="gpu_lidar">
         <always_on>true</always_on>
         <visualize>false</visualize>
         <update_rate>10.0</update_rate>
-        <pose>0 0 0 0 0 0</pose>
-        <ray>
+        <topic>scan</topic>
+        <ignition_frame_id>${lidar_name}_link</ignition_frame_id>
+        <lidar>
           <scan>
             <horizontal>
               <samples>440</samples>
@@ -193,6 +193,12 @@
               <min_angle>-1.919862</min_angle>
               <max_angle>1.919862</max_angle>
             </horizontal>
+            <vertical>
+              <samples>1</samples>
+              <resolution>1</resolution>
+              <min_angle>0.0</min_angle>
+              <max_angle>0.0</max_angle>
+            </vertical>
           </scan>
           <range>
             <min>0.12</min>
@@ -204,14 +210,7 @@
             <mean>0.0</mean>
             <stddev>0.008</stddev>
           </noise>
-        </ray>
-        <plugin name="${lidar_name}_2d_plugin" filename="libgazebo_ros_ray_sensor.so">
-          <ros>
-            <remapping>~/out:=/scan</remapping>
-          </ros>
-          <output_type>sensor_msgs/LaserScan</output_type>
-          <frame_name>${lidar_name}_link</frame_name>
-        </plugin>
+        </lidar>
       </sensor>
     </gazebo>
 

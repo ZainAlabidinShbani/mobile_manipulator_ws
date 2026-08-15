@@ -2,7 +2,8 @@
 <!--
   warehouse.world
   ─────────────────────────────────────────────────────────────────────────────
-  Phase 4 — Gazebo Classic warehouse floor plan for the mobile manipulator.
+  Phase 4 — Gazebo Fortress (gz-sim 6) warehouse floor plan for the mobile
+  manipulator.  Migrated from Gazebo Classic, which reached EOL in Jan 2025.
 
   Phase 4 rework: rack rows densified to 5 bays, cargo pallets + cardboard
   stock inside the aisles, construction barrels / cabinets / brick cargo
@@ -13,7 +14,12 @@
 
   All furniture (storage racks, wooden pallets, barrier obstacles) is composed
   from existing Gazebo model-database models (osrf/gazebo_models, installed
-  under ~/.gazebo/models and referenced via model://).  No mesh geometry is
+  under ~/.gazebo/models and referenced via model://; the launch file puts
+  that directory on IGN_GAZEBO_RESOURCE_PATH, which replaced
+  GAZEBO_MODEL_PATH).  Those vendored models still carry Ogre <script>
+  materials, which Fortress cannot render, so they appear untextured —
+  geometry and collisions, which is all Nav2 and the costmaps consume,
+  are unaffected.  No mesh geometry is
   hand-authored in this file — the only primitive geometry is the warehouse
   slab, perimeter walls, the home-pose marker, and the pick/drop target
   objects (red / blue / green 75 mm spheres, COCO class "sports ball" —
@@ -37,6 +43,30 @@
 -->
 <sdf version="1.7">
   <world name="warehouse">
+
+    <!-- ════════════════════════════════════════════════════════════════
+         GZ-SIM SYSTEM PLUGINS
+         Gazebo Classic had these behaviours built into gzserver.  Under
+         Fortress every one of them is an explicitly loaded system:
+           Physics         — steps the world at all
+           UserCommands    — serves /world/warehouse/create, which is how
+                             `ros_gz_sim create` spawns the robot
+           SceneBroadcaster— publishes scene + pose state (the GUI, and
+                             the pose_info topic used for ground truth)
+           Sensors         — renders cameras and lidar.  NOT loaded by
+                             default: without it every sensor stays silent
+                             while the sim otherwise looks healthy.
+         ════════════════════════════════════════════════════════════════ -->
+    <plugin filename="ignition-gazebo-physics-system"
+            name="ignition::gazebo::systems::Physics"/>
+    <plugin filename="ignition-gazebo-user-commands-system"
+            name="ignition::gazebo::systems::UserCommands"/>
+    <plugin filename="ignition-gazebo-scene-broadcaster-system"
+            name="ignition::gazebo::systems::SceneBroadcaster"/>
+    <plugin filename="ignition-gazebo-sensors-system"
+            name="ignition::gazebo::systems::Sensors">
+      <render_engine>ogre2</render_engine>
+    </plugin>
 
     <!-- ════════════════════════════════════════════════════════════════
          SCENE + LIGHTING  (tuned for the wrist RGB camera: no blown-out
@@ -88,6 +118,11 @@
     <!-- ════════════════════════════════════════════════════════════════
          PHYSICS  (1000 Hz ODE; real-time factor target ≥ 0.7)
          ════════════════════════════════════════════════════════════════ -->
+    <!-- Fortress ignores type="ode" (it runs DART via the Physics system)
+         and ignores real_time_update_rate; the effective step rate is
+         real_time_factor / max_step_size = 500 Hz, which is what the
+         Classic pair of values already meant.  Kept verbatim so the
+         intent stays readable and Classic can still load this file. -->
     <physics type="ode">
       <max_step_size>0.002</max_step_size>
       <real_time_factor>1.0</real_time_factor>
@@ -125,10 +160,9 @@
             </box>
           </geometry>
           <material>
-            <script>
-              <uri>file://media/materials/scripts/gazebo.material</uri>
-              <name>Gazebo/Grey</name>
-            </script>
+            <ambient>0.3 0.3 0.3 1</ambient>
+            <diffuse>0.7 0.7 0.7 1</diffuse>
+            <specular>0.01 0.01 0.01 1</specular>
           </material>
         </visual>
       </link>
@@ -143,10 +177,9 @@
         <visual name="visual">
           <geometry><box><size>36.0 0.3 2.5</size></box></geometry>
           <material>
-            <script>
-              <uri>file://media/materials/scripts/gazebo.material</uri>
-              <name>Gazebo/White</name>
-            </script>
+            <ambient>1 1 1 1</ambient>
+            <diffuse>1 1 1 1</diffuse>
+            <specular>0.1 0.1 0.1 1</specular>
           </material>
         </visual>
       </link>
@@ -162,10 +195,9 @@
         <visual name="visual">
           <geometry><box><size>36.0 0.3 2.5</size></box></geometry>
           <material>
-            <script>
-              <uri>file://media/materials/scripts/gazebo.material</uri>
-              <name>Gazebo/White</name>
-            </script>
+            <ambient>1 1 1 1</ambient>
+            <diffuse>1 1 1 1</diffuse>
+            <specular>0.1 0.1 0.1 1</specular>
           </material>
         </visual>
       </link>
@@ -181,10 +213,9 @@
         <visual name="visual">
           <geometry><box><size>0.3 29.0 2.5</size></box></geometry>
           <material>
-            <script>
-              <uri>file://media/materials/scripts/gazebo.material</uri>
-              <name>Gazebo/White</name>
-            </script>
+            <ambient>1 1 1 1</ambient>
+            <diffuse>1 1 1 1</diffuse>
+            <specular>0.1 0.1 0.1 1</specular>
           </material>
         </visual>
       </link>
@@ -200,10 +231,9 @@
         <visual name="visual">
           <geometry><box><size>0.3 29.0 2.5</size></box></geometry>
           <material>
-            <script>
-              <uri>file://media/materials/scripts/gazebo.material</uri>
-              <name>Gazebo/White</name>
-            </script>
+            <ambient>1 1 1 1</ambient>
+            <diffuse>1 1 1 1</diffuse>
+            <specular>0.1 0.1 0.1 1</specular>
           </material>
         </visual>
       </link>
@@ -316,10 +346,9 @@
             </box>
           </geometry>
           <material>
-            <script>
-              <uri>file://media/materials/scripts/gazebo.material</uri>
-              <name>Gazebo/DarkGrey</name>
-            </script>
+            <ambient>0.175 0.175 0.175 1</ambient>
+            <diffuse>0.175 0.175 0.175 1</diffuse>
+            <specular>0.175 0.175 0.175 1</specular>
           </material>
         </visual>
       </link>
@@ -394,10 +423,9 @@
             </sphere>
           </geometry>
           <material>
-            <script>
-              <uri>file://media/materials/scripts/gazebo.material</uri>
-              <name>Gazebo/Red</name>
-            </script>
+            <ambient>1 0 0 1</ambient>
+            <diffuse>1 0 0 1</diffuse>
+            <specular>0.1 0.1 0.1 1</specular>
           </material>
         </visual>
       </link>
@@ -440,10 +468,9 @@
             </sphere>
           </geometry>
           <material>
-            <script>
-              <uri>file://media/materials/scripts/gazebo.material</uri>
-              <name>Gazebo/Blue</name>
-            </script>
+            <ambient>0 0 1 1</ambient>
+            <diffuse>0 0 1 1</diffuse>
+            <specular>0.1 0.1 0.1 1</specular>
           </material>
         </visual>
       </link>
@@ -486,10 +513,9 @@
             </sphere>
           </geometry>
           <material>
-            <script>
-              <uri>file://media/materials/scripts/gazebo.material</uri>
-              <name>Gazebo/Green</name>
-            </script>
+            <ambient>0 1 0 1</ambient>
+            <diffuse>0 1 0 1</diffuse>
+            <specular>0.1 0.1 0.1 1</specular>
           </material>
         </visual>
       </link>
@@ -509,10 +535,9 @@
             </box>
           </geometry>
           <material>
-            <script>
-              <uri>file://media/materials/scripts/gazebo.material</uri>
-              <name>Gazebo/Green</name>
-            </script>
+            <ambient>0 1 0 1</ambient>
+            <diffuse>0 1 0 1</diffuse>
+            <specular>0.1 0.1 0.1 1</specular>
           </material>
         </visual>
       </link>
@@ -520,15 +545,14 @@
     </model>
 
     <!-- ════════════════════════════════════════════════════════════════
-         PHASE-4 SCREENSHOT CAMERA  (world-fixed, gazebo_ros camera)
+         PHASE-4 SCREENSHOT CAMERA  (world-fixed, native gz-sim camera)
          Third-person view of the robot at its home pose, used to capture
          the Phase-4 stability screenshot headlessly (without gzclient).
 
-         Publishes /phase4_camera/image_raw + /phase4_camera/camera_info.
-         NOTE: gazebo_ros_camera derives its topic names from the plugin's
-         <camera_name> ("<camera_name>/image_raw"), so a <ros><remapping>
-         keyed on the bare name "image_raw" never matches and is silently
-         ignored — the topic is controlled by <camera_name> alone.
+         Publishes /phase4_camera/image_raw + /phase4_camera/camera_info
+         once ros_gz_bridge carries them over; the gz-side names come from
+         <topic> below (gz appends /camera_info to it).  Under Classic this
+         was driven by the plugin's <camera_name>; there is no plugin now.
          NOTE: <horizontal_fov>/<image>/<clip> MUST sit inside <camera>;
          as direct <sensor> children they are dropped and the sensor falls
          back to the SDF default 320x240 camera.
@@ -544,6 +568,8 @@
         <sensor name="phase4_camera_sensor" type="camera">
           <always_on>true</always_on>
           <update_rate>15</update_rate>
+          <topic>phase4_camera/image_raw</topic>
+          <ignition_frame_id>phase4_camera_link</ignition_frame_id>
           <camera>
             <horizontal_fov>1.047</horizontal_fov>
             <image>
@@ -556,10 +582,6 @@
               <far>100.0</far>
             </clip>
           </camera>
-          <plugin name="phase4_camera_plugin" filename="libgazebo_ros_camera.so">
-            <camera_name>phase4_camera</camera_name>
-            <frame_name>phase4_camera_link</frame_name>
-          </plugin>
         </sensor>
       </link>
       <pose>-2.4 -2.4 1.35 0 0.25921 0.7854</pose>
