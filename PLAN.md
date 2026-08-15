@@ -354,8 +354,12 @@ default goal tolerance. Report the final pose error.
 
 **Deliverables:**
 ```
-husky_ur5_perception/husky_ur5_perception/
-└── yolo_perception_node.py
+mobile_manipulator_perception/mobile_manipulator_perception/
+├── yolo_perception_node.py     # the node itself
+├── phase7_look_pose.py         # gate helper: aim the wrist camera at the bench
+└── phase7_target_check.py      # gate: sample the TF, score it against the world file
+mobile_manipulator_perception/models/
+└── yolov8n.pt                  # shipped with the package; no mid-demo download
 ```
 
 **Node responsibilities (unchanged from your spec, made explicit):**
@@ -365,17 +369,77 @@ husky_ur5_perception/husky_ur5_perception/
 4. For the highest-confidence target-class detection: back-project pixel (u,v) + depth to a 3D point in the camera optical frame using the camera intrinsics (`/camera/color/camera_info`).
 5. Broadcast a `tf2_ros.TransformBroadcaster` transform `camera_color_optical_frame -> object_target_frame` at that 3D point, at some throttled rate (e.g. 10 Hz, not every frame at full rate if inference is slower).
 
+**Four prerequisites discovered here.** None of them live in the node, and all
+four are silent failures — the node runs perfectly while seeing nothing:
+
+- **There was no depth stream.** `gazebo.xacro` only ever declared the colour
+  camera. It now also declares a `<sensor type="depth">` served by
+  `libgazebo_ros_camera.so` (`libgazebo_ros_depth_camera.so` is not in the
+  Humble binaries; `gazebo_plugins::GazeboRosCamera` derives from
+  `gazebo::DepthCameraPlugin` and covers depth sensors too). It is mounted on
+  the *colour* frame at the same FOV and resolution, so depth pixel (u,v) is
+  colour pixel (u,v) and one CameraInfo back-projects both.
+- **The wrist camera pointed 90° off its lens axis.** URDF→SDF fixed-joint
+  lumping *discards* a `<pose>` authored on a `<sensor>` and substitutes the
+  referenced frame's own transform, so the only way to aim a Gazebo camera is
+  to reference a frame that is already X-forward. Both sensors now reference
+  `camera_color_frame`, keeping `<frame_name>camera_color_optical_frame</...>`
+  for the published headers.
+- **The bench targets were undetectable by a COCO model.** The world's original
+  red cube / blue cylinder / green box were chosen "so YOLO can tell them
+  apart", but stock `yolov8n.pt` classifies by learned category, not colour,
+  and COCO has no cube class — measured peak confidence 1–3 %, while the
+  tabletop itself scored 0.82 as "bed". They are now three 75 mm spheres,
+  which read as COCO **"sports ball"** at 0.67–0.89 from the same viewpoint and
+  still fit the Robotiq 2F-85's 85 mm stroke.
+- **gzclient starves the sensor renderer.** Running the Gazebo GUI alongside
+  the two 640x480 wrist cameras drops them from ~6 Hz to under 0.3 Hz on an
+  8-core box. `gazebo_warehouse.launch.py` gained a `gui` argument; Phase 7
+  runs with `gui:=false`.
+
 **Test / gate:**
 ```bash
-ros2 run husky_ur5_perception yolo_perception_node
-# with Gazebo (Phase 4) running and robot parked at the pick table
+# 1. Gazebo, headless (see above), robot spawned at the pick table
+ros2 launch mobile_manipulator_gazebo gazebo_warehouse.launch.py \
+    home_x:=3.1 gui:=false
+
+# 2. The perception node, BEFORE the arm moves (loading YOLO takes ~15 s)
+ros2 run mobile_manipulator_perception yolo_perception_node \
+    --ros-args -p use_sim_time:=true
+
+# 3. Aim the wrist camera at the bench and hold the base there
+pkill -f "[h]ome_hold"                       # it pins cmd_vel to zero at 50 Hz
+ros2 run mobile_manipulator_perception phase7_look_pose --hold 120 \
+    --ros-args -p use_sim_time:=true
+
+# 4. Score it
+ros2 run mobile_manipulator_perception phase7_target_check \
+    --duration 10 --ros-args -p use_sim_time:=true
 ros2 run tf2_ros tf2_echo camera_color_optical_frame object_target_frame
 ```
 Pass = the `cv2.imshow` window shows correctly drawn boxes on the sim camera feed, `tf2_echo` prints a stable, plausible (x,y,z) — sanity check it against the known simulated position of the target object in the world file, error should be small (a few cm, driven by depth noise if you added any).
 
+**Achieved:** 20/20 fresh samples over 10 s, transform peak-to-peak **0.7 mm**,
+world-frame position error **2.9 mm** against `target_ball_green`'s spawn pose.
+The annotated window shows `sports ball 0.89` / `sports ball 0.67` on two balls
+(plus a harmless `bed 0.56` on the tabletop), with the locked target boxed in
+red and its 3D point printed on the frame.
+
+**Open follow-up for Phase 8 — the parked base will not stay parked.** Whenever
+the arm holds an extended pose the base rolls backwards at ~1 cm/s and then,
+after ~25 s, lurches ~0.4 m sideways and yaws ~0.65 rad. It is genuinely
+rolling — `/odom` sees it — because the arm's `position` command interface has
+no PID, so gazebo_ros2_control holds the joints with a kinematic
+`gazebo::physics::Joint::SetPosition` every cycle rather than a torque, and the
+wheels are held the same kinematic way and cannot absorb the reaction.
+`phase7_look_pose --hold` closes a P loop on `/odom` to pin the base for the
+duration of the gate, which is enough for perception but not for grasping.
+Phase 8 should fix the cause (PID/effort control on the arm joints) rather than
+lean on the workaround.
+
 **Antigravity task prompt (Phase 7):**
 ```
-In husky_ur5_perception, write yolo_perception_node.py: a rclpy node
+In mobile_manipulator_perception, write yolo_perception_node.py: a rclpy node
 subscribing to /camera/color/image_raw and /camera/depth/image_raw
 (message_filters ApproximateTimeSynchronizer to pair them), running
 Ultralytics YOLOv8 (yolov8n.pt) inference per synced frame pair, drawing
@@ -583,7 +647,40 @@ cycles complete, reporting the per-cycle summary for all 5.
       Phase 8: the base cannot park closer than x ≈ 3.24 m (front edge against
       the workbench legs), leaving the targets ~1.0 m from the arm base,
       beyond the UR5's 0.85 m reach.)
-- [ ] Phase 7 — YOLO detects + TF position within a few cm of ground truth
+- [x] Phase 7 — YOLO detects + TF position within a few cm of ground truth
+      (`mobile_manipulator_perception/yolo_perception_node.py`: message_filters
+      ApproximateTimeSynchronizer over `/camera/color/image_raw` +
+      `/camera/depth/image_raw`, Ultralytics YOLOv8n, annotated
+      `cv2.imshow("Live YOLOv8 Target Detection")` mirrored on
+      `~/annotated_image`, `camera_color_optical_frame -> object_target_frame`
+      at 10 Hz.  Gate: **2.9 mm** position error against `target_ball_green`'s
+      spawn pose in `warehouse.world`, transform peak-to-peak **0.7 mm** over
+      20 samples / 10 s, 0 dropped — run `phase7_target_check`.
+      Four things had to be fixed before any of that could work, none of them
+      in the node:
+        (a) there was no depth stream at all.  `gazebo.xacro` now declares a
+            `<sensor type="depth">` served by `libgazebo_ros_camera.so`
+            (`libgazebo_ros_depth_camera.so` is not in the Humble binaries);
+        (b) the wrist camera was pointing 90° off its own lens axis.  A sensor
+            under `<gazebo reference="...">` has its authored `<pose>`
+            *discarded* by URDF→SDF fixed-joint lumping, so the referenced
+            frame's own orientation is the only thing that aims it — both
+            camera sensors now hang off `camera_color_frame`, not
+            `camera_color_optical_frame`;
+        (c) the bench targets were undetectable.  Stock COCO yolov8n has no
+            class for a coloured cube: the old cube/cylinder/box peaked at
+            1–3 % confidence while the tabletop scored 0.82 as "bed".  They are
+            now three 75 mm spheres — COCO "sports ball" at 0.67–0.89, still
+            inside the 2F-85's 85 mm stroke;
+        (d) gzclient was starving the sensor renderer.  Launch with
+            `gui:=false` (new argument) or the wrist cameras fall from ~6 Hz to
+            under 0.3 Hz and the detector sees almost nothing.
+      Open follow-up for Phase 8: the parked base **rolls backwards ~1 cm/s and
+      then lurches ~0.4 m / 0.65 rad after ~25 s** whenever the arm holds an
+      extended pose, because the arm's position command interface has no PID so
+      gazebo_ros2_control holds it with kinematic `Joint::SetPosition`.
+      `phase7_look_pose --hold` station-keeps on `/odom` as a workaround; a
+      grasp phase needs this fixed properly.)
 - [ ] Phase 8 — orchestrator dry-run: full sequence + failure path both correct
 - [ ] Phase 9 — one full real cycle succeeds end-to-end
 - [ ] Phase 10 — `colcon test` all green

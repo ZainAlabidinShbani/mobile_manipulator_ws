@@ -21,6 +21,13 @@
 
 controller_manager:
   ros__parameters:
+    # Gazebo physics runs at 500 Hz (warehouse.world: max_step_size 0.002) but
+    # the controller manager deliberately stays at 100 Hz: raising it to 500
+    # inside gzserver starves the sensor rendering thread on this 8-core box —
+    # the two 640x480 wrist cameras fell from ~3 Hz to under 0.3 Hz — and it did
+    # NOT stop the parked base creeping while the arm holds an extended pose
+    # (see the "base creeps with the arm extended" note in CLAUDE.md), so the
+    # frame rate is the better thing to spend the cycles on.
     update_rate: 100  # Hz
 
     joint_state_broadcaster:

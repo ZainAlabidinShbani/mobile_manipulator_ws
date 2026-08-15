@@ -14,10 +14,10 @@ verification gate. `prompts/` holds the per-phase task prompt plus the exact ter
 command sequence and known gotchas for that phase — **read `prompts/NN_phaseN_*.md` before
 starting a phase**; it usually already documents the traps.
 
-Status (checklist lives in `PLAN.md` §14, keep it updated): Phases 1–6 complete
-(bootstrap, description, ros2_control, Gazebo world, MoveIt 2 config, Nav2). Phases
-7–11 pending — `mobile_manipulator_perception` and `mobile_manipulator_orchestrator`
-are deliberately empty skeletons awaiting their phase.
+Status (checklist lives in `PLAN.md` §14, keep it updated): Phases 1–7 complete
+(bootstrap, description, ros2_control, Gazebo world, MoveIt 2 config, Nav2, YOLOv8
+perception). Phases 8–11 pending — `mobile_manipulator_orchestrator` is a
+deliberately empty skeleton awaiting its phase.
 
 ## Non-negotiable project rules (`.agents/rules/instructions.md`)
 
@@ -74,6 +74,14 @@ ros2 launch mobile_manipulator_moveit_config demo.launch.py          # mock benc
 pkill -f "[h]ome_hold"                    # it pins cmd_vel to zero at 50 Hz
 ros2 launch mobile_manipulator_navigation nav2_bringup.launch.py
 ros2 run mobile_manipulator_navigation phase6_nav_goal.py --goal 2.9 0.0 0.0
+
+# Phase 7 gate — YOLOv8 perception (order matters; see the base-creep trap below)
+ros2 launch mobile_manipulator_gazebo gazebo_warehouse.launch.py home_x:=3.1 gui:=false
+ros2 run mobile_manipulator_perception yolo_perception_node --ros-args -p use_sim_time:=true
+pkill -f "[h]ome_hold"
+ros2 run mobile_manipulator_perception phase7_look_pose --hold 120 --ros-args -p use_sim_time:=true
+ros2 run mobile_manipulator_perception phase7_target_check --duration 10 --ros-args -p use_sim_time:=true
+ros2 run tf2_ros tf2_echo camera_color_optical_frame object_target_frame
 
 # Re-map the warehouse (only needed if the world changes)
 ros2 launch mobile_manipulator_navigation slam.launch.py
@@ -193,6 +201,38 @@ through it. `cmd_vel` is remapped to `/diff_drive_controller/cmd_vel_unstamped`.
 the `/plan`, tracks Gazebo ground truth, and checks the robot polygon against every
 obstacle footprint parsed out of `warehouse.world`.
 
+### Perception (`mobile_manipulator_perception`)
+
+`yolo_perception_node.py` pairs `/camera/color/image_raw` and
+`/camera/depth/image_raw` with a `message_filters` ApproximateTimeSynchronizer,
+runs Ultralytics YOLOv8n per pair, annotates boxes/class/confidence into
+`cv2.imshow("Live YOLOv8 Target Detection")` (mirrored on `~/annotated_image` so
+it can be checked headlessly), back-projects the chosen box centre with the
+`/camera/color/camera_info` intrinsics, and broadcasts
+`camera_color_optical_frame -> object_target_frame` at 10 Hz. With no fresh
+detection it simply stops broadcasting.
+
+Weights ship in the package (`models/yolov8n.pt`). The three executables are
+console-script entry points, which is why the package needs `setup.cfg` —
+without the `[develop] script_dir` / `[install] install_scripts` stanza colcon
+installs them to `install/<pkg>/bin` and `ros2 run` reports `No executable
+found`.
+
+Two behaviours to know before touching it: it **locks onto one target**
+(`track_radius`, default 0.15 m), because three interchangeable balls make
+"highest confidence" flip frame to frame and teleport the TF between objects;
+and it adds `target_radius_m` (default 0.0375) along the view ray, because depth
+measures the object's front surface rather than its centroid.
+
+`phase7_look_pose.py` aims the wrist camera at the bench via a **two-waypoint**
+trajectory — interpolating straight from the stowed pose drags the gripper
+through the workbench slab, and Gazebo then launches the robot off the map while
+the controllers report success the whole way. `--hold` station-keeps the base on
+`/odom`. `phase7_target_check.py` is the gate: it composes the broadcast point
+with Gazebo ground truth for `world -> base_footprint` and TF (pure FK) for
+`base_footprint -> camera`, then scores it against the target poses parsed out of
+`warehouse.world`.
+
 ## Environment traps worth knowing before you debug
 
 - `ROS_LOCALHOST_ONLY=1` is mandatory on this machine (WiFi + VPN interfaces make FastDDS
@@ -235,6 +275,51 @@ obstacle footprint parsed out of `warehouse.world`.
 - A stale `gzserver` holds port 11345 and the next launch dies with `Address already
   in use` deep in the log. Kill by PID (`pgrep -f gzserver`): `pkill -f` patterns also
   match the shell running them.
+- **A `<pose>` authored on a `<sensor>` under `<gazebo reference="...">` is
+  discarded.** Every `camera_*` frame reaches its parent through a fixed joint,
+  so URDF→SDF reduction lumps them into `arm_wrist_3_link` and gzsdf substitutes
+  the referenced frame's own transform for whatever pose you wrote. The only
+  thing that aims a Gazebo camera is the orientation of the frame it references,
+  which must be X-forward/Y-left/Z-up — *not* a REP-103 optical frame. Both
+  D435i sensors therefore reference `camera_color_frame` while still stamping
+  images `camera_color_optical_frame`. Verify with
+  `gz sdf -p /tmp/mm.urdf | grep -A12 "sensor name='camera_color'"`.
+- **`libgazebo_ros_depth_camera.so` is not in the Humble binaries.** Use
+  `libgazebo_ros_camera.so` with `<sensor type="depth">` —
+  `gazebo_plugins::GazeboRosCamera` derives from `gazebo::DepthCameraPlugin`.
+  Topic names come from `<camera_name>`, not from `<remapping>`.
+- **Run Gazebo with `gui:=false` for anything that reads the wrist cameras.**
+  gzclient renders the whole warehouse and starves gzserver's own sensor
+  rendering: the two 640x480 wrist cameras fall from ~6 Hz to under 0.3 Hz. It
+  only starts when `DISPLAY` is set, so this first bites on a phase that needs a
+  display for something else (Phase 7 wants `cv2.imshow`).
+- **The parked base creeps whenever the arm holds an extended pose** — backwards
+  at ~1 cm/s, then a ~0.4 m / 0.65 rad lurch after ~25 s, after which the bench
+  is out of frame. It is genuinely rolling (`/odom` matches ground truth to
+  1 mm), because the arm's `position` command interface has no PID so
+  gazebo_ros2_control holds the joints with kinematic
+  `gazebo::physics::Joint::SetPosition`, and the wheels — held the same
+  kinematic way — cannot absorb the reaction. `phase7_look_pose --hold` closes a
+  P loop on `/odom` as a workaround; Phase 8 needs the cause fixed. Raising
+  `controller_manager.update_rate` from 100 to 500 Hz does **not** help and
+  costs the camera frame rate.
+- **A COCO-pretrained YOLO cannot see hand-authored primitives.** `yolov8n.pt`
+  scored 1–3 % on the world's original cube/cylinder/box while calling the
+  tabletop a `bed` at 0.82. The pick targets are now 75 mm spheres, which read as
+  `sports ball` at 0.67–0.89 and still fit the 2F-85's 85 mm stroke.
+- **`cv_bridge` is unusable in this workspace.** Its Humble boost extension is
+  built against numpy 1.x while Ultralytics/torch require numpy 2.x; importing it
+  yields `AttributeError: _ARRAY_API not found`. Decode `sensor_msgs/Image` with
+  numpy directly. Ultralytics also imports matplotlib, so the apt
+  `python3-matplotlib` must be shadowed by `pip install --user -U matplotlib`.
+- **Never build a timeout from `get_clock()` under `use_sim_time`.** It reads 0
+  until the first `/clock` message and then jumps to the sim's uptime, so
+  `deadline = now() + wait` expires instantly. Use `time.monotonic()`. For the
+  same reason, judge TF freshness by the stamp *advancing* rather than by its
+  absolute age — a node busy with inference lags `/clock` by a variable amount.
+- **`ros2 topic hz` can report nothing on a healthy topic here.** It showed no
+  messages on `/camera/color/image_raw` while a plain rclpy subscriber measured
+  6.3 Hz. Count messages yourself before declaring a sensor dead.
 - URDF built via `Command([...xacro...])` in a launch file **must** be wrapped in
   `ParameterValue(..., value_type=str)`, else launch dies with "Unable to parse the value
   of parameter robot_description as yaml".

@@ -156,8 +156,12 @@ mobile_manipulator_description/
 - 8 `euro_pallet` models at aisle ends and side lanes
 - 4 `jersey_barrier` obstacles flanking the central drive lane
 - `pick_workbench` (`model://table`) at (4.5, 0) and `drop_off_table` at (4.5, 3.2)
-- target objects on the workbench: `target_cube_red`, `target_cylinder_blue`,
-  `target_box_green` — deliberately simple primitives in distinct colors for Phase 7's YOLO
+- target objects on the workbench: `target_ball_red`, `target_ball_blue`,
+  `target_ball_green` — three 75 mm spheres. **Changed in Phase 7**: these were
+  originally a cube, a cylinder and a box "in distinct colors for YOLO", which
+  does not work — stock COCO `yolov8n.pt` classifies by learned category, not
+  colour, and peaked at 1–3 % confidence on them. A plain sphere reads as COCO
+  `sports ball` at 0.67–0.89, and 75 mm still fits the 2F-85's 85 mm stroke.
 - 2 directional lights (key + fill) + 2 point lights over the tables
 - a visual-only home-pose marker at (0, 0) and the static `phase4_camera` screenshot camera
 

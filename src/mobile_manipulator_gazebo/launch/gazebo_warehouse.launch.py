@@ -73,19 +73,31 @@ def generate_launch_description():
     home_y = LaunchConfiguration('home_y', default='0.0')
     home_z = LaunchConfiguration('home_z', default='0.0')
     home_yaw = LaunchConfiguration('home_yaw', default='0.0')
+    gui = LaunchConfiguration('gui', default='true')
 
     declare_home_x = DeclareLaunchArgument('home_x', default_value='0.0', description='Home pose X [m]')
     declare_home_y = DeclareLaunchArgument('home_y', default_value='0.0', description='Home pose Y [m]')
     declare_home_z = DeclareLaunchArgument('home_z', default_value='0.0', description='Home pose Z [m]')
     declare_home_yaw = DeclareLaunchArgument('home_yaw', default_value='0.0', description='Home pose yaw [rad]')
+    declare_gui = DeclareLaunchArgument(
+        'gui', default_value='true',
+        description='Start gzclient too. false = headless gzserver, which leaves the cores for sensor rendering.')
 
-    # ── Gazebo server + client with the warehouse world ─────────────────────
+    # ── Gazebo server (+ client unless gui:=false) with the warehouse world ──
+    # gzclient is a full 3D render of the whole warehouse and it competes with
+    # gzserver's own sensor rendering for the same cores and GPU.  On an 8-core
+    # box, running it alongside the two 640x480 wrist cameras drops those
+    # cameras from ~3 Hz to under 0.3 Hz, which starves everything downstream of
+    # them (Phase 7's detector, most obviously).  Pass gui:=false for headless
+    # runs.  Note gzclient only actually starts when DISPLAY is set, so this
+    # first bites on the phase that needs a display for something else.
     gazebo = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             PathJoinSubstitution([FindPackageShare('gazebo_ros'), 'launch', 'gazebo.launch.py'])),
         launch_arguments={
             'world': world_file,
             'verbose': 'true',
+            'gui': gui,
         }.items(),
     )
 
@@ -180,6 +192,7 @@ def generate_launch_description():
         declare_home_y,
         declare_home_z,
         declare_home_yaw,
+        declare_gui,
         gazebo,
         robot_state_publisher,
         spawn_robot,

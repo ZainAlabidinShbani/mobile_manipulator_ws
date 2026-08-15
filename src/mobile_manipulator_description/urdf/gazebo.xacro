@@ -11,16 +11,22 @@
        and loads the controller configuration from the given YAML file.
 
     2. D435i RGB camera sensor (libgazebo_ros_camera.so)
-       Attached to camera_color_optical_frame with a 180° roll about Z so
-       that Gazebo's rendered image (+Y up in the sensor frame) matches the
-       REP-103 ROS optical convention (row 0 = top = -Y of the optical frame).
+       Referenced to camera_color_frame (the colour module's body frame,
+       X-forward) and stamped with frame_name camera_color_optical_frame —
+       see the long comment on that choice inside the macro.
+
+    3. D435i depth sensor (also libgazebo_ros_camera.so, type="depth")
+       Publishes /camera/depth/image_raw (32FC1, metres) registered to the
+       colour stream — see the comment on the sensor block below.
 
   NOTE: gazebo_ros camera plugins publish the raw rendered image with no
-  internal flip; the sensor pose is therefore the only place that corrects
-  for the Gazebo vs ROS optical-frame orientation difference.
-  NOTE: a depth sensor (libgazebo_ros_depth_camera.so) is intentionally NOT
-  declared — that plugin is not shipped by the ros-humble-gazebo-plugins
-  binary package, and gzserver refuses to load it.
+  internal flip, and a <pose> authored on a <sensor> under a lumped fixed
+  frame is discarded by gzsdf — the referenced frame's own orientation is
+  the only thing that aims the camera.
+  NOTE: libgazebo_ros_depth_camera.so is NOT shipped by the Humble
+  ros-humble-gazebo-plugins binary, so the depth stream is produced by
+  libgazebo_ros_camera.so instead — gazebo_plugins::GazeboRosCamera derives
+  from gazebo::DepthCameraPlugin and handles <sensor type="depth"> too.
 
   Usage in the top-level xacro (only when use_gazebo:=true):
     <xacro:include filename="$(find mobile_manipulator_description)/urdf/gazebo.xacro"/>
@@ -33,6 +39,38 @@
 
   <xacro:macro name="mobile_manipulator_gazebo"
                params="camera_name:='camera' lidar_name:='lidar' controllers_yaml:=''">
+
+    <!-- ══════════════════════════════════════════════════════════════════
+         WHY THE CAMERAS HANG OFF camera_color_frame, NOT
+         camera_color_optical_frame  — and why they carry no <pose>.
+
+         A Gazebo camera sensor looks down its own +X, with +Y left and +Z
+         up.  A REP-103 optical frame is +X right, +Y down, +Z forward.
+         Those differ by rpy(-pi/2, 0, -pi/2), so a sensor referenced to an
+         optical frame renders 90 deg off the lens axis and rolled 90 deg —
+         it silently photographs whatever is beside the robot.
+
+         The obvious fix, an authored <pose> on the <sensor> that rotates it
+         back, DOES NOT WORK.  Every camera_* frame reaches its parent
+         through a fixed joint, so URDF->SDF reduction lumps them all into
+         arm_wrist_3_link, and gzsdf then REPLACES the sensor's <pose> with
+         the referenced frame's transform relative to the surviving link.
+         Confirm with:
+             gz sdf -p mobile_manipulator.urdf | grep -A2 "sensor name='camera_color'"
+         which prints the frame transform, never the authored value.  Any
+         <pose> written here is dead code.
+
+         So the orientation has to come from the referenced frame itself.
+         camera_color_frame is the D435i colour module's *body* frame: same
+         origin as camera_color_optical_frame, but already X-forward /
+         Y-left / Z-up — exactly the Gazebo camera convention.  Referencing
+         it puts the sensor at the right place pointing the right way with
+         no <pose> at all, while <frame_name>camera_color_optical_frame
+         stamps the images and CameraInfo with the optical frame, whose
+         axes are by construction the (right, down, forward) of the
+         rendered image.  Back-projection therefore lands directly in
+         camera_color_optical_frame with no extra rotation.
+         ══════════════════════════════════════════════════════════════════ -->
 
     <!-- ══════════════════════════════════════════════════════════════════
          gazebo_ros2_control plugin
@@ -51,11 +89,10 @@
     <!-- ══════════════════════════════════════════════════════════════════
          D435i RGB camera — publishes /camera/color/image_raw + camera_info
          ══════════════════════════════════════════════════════════════════ -->
-    <gazebo reference="${camera_name}_color_optical_frame">
+    <gazebo reference="${camera_name}_color_frame">
       <sensor name="${camera_name}_color" type="camera">
         <always_on>true</always_on>
         <update_rate>10</update_rate>
-        <pose>0 0 0 0 0 3.141592653589793</pose>
         <camera>
           <horizontal_fov>1.3963</horizontal_fov>
           <image>
@@ -76,6 +113,58 @@
           <camera_name>camera/color</camera_name>
           <frame_name>${camera_name}_color_optical_frame</frame_name>
           <hack_baseline>0.07</hack_baseline>
+        </plugin>
+      </sensor>
+    </gazebo>
+
+
+    <!-- ══════════════════════════════════════════════════════════════════
+         D435i depth stream — publishes /camera/depth/image_raw (32FC1, m)
+         plus /camera/depth/camera_info (Phase 7: YOLO back-projection).
+
+         Mounted on camera_color_frame — NOT on the D435i's own
+         camera_depth_frame — with the identical horizontal FOV and
+         640x480 resolution as the colour sensor above.  That makes
+         depth pixel (u,v) correspond to colour pixel (u,v) by construction:
+         the simulated equivalent of the real D435i's
+         aligned_depth_to_color stream.  Consequences the perception node
+         relies on:
+           * /camera/color/camera_info intrinsics are exactly valid for
+             back-projecting the depth image, so one CameraInfo suffices;
+           * the recovered 3D point already lives in
+             camera_color_optical_frame, which is the parent frame Phase 7
+             broadcasts object_target_frame from — no extra TF hop, hence
+             no error from the ~15 mm colour/depth baseline of the real
+             sensor.
+
+         <camera_name>camera</camera_name> is deliberate: gazebo_ros_camera
+         derives topic names from that element (a <remapping> keyed on the
+         bare name is silently dropped), and GazeboRosCamera appends
+         "depth/image_raw" for a depth sensor.  camera + depth/image_raw
+         is what yields /camera/depth/image_raw.
+         ══════════════════════════════════════════════════════════════════ -->
+    <gazebo reference="${camera_name}_color_frame">
+      <sensor name="${camera_name}_depth" type="depth">
+        <always_on>true</always_on>
+        <update_rate>10</update_rate>
+        <camera>
+          <horizontal_fov>1.3963</horizontal_fov>
+          <image>
+            <width>640</width>
+            <height>480</height>
+            <format>R8G8B8</format>
+          </image>
+          <clip>
+            <near>0.05</near>
+            <far>30.0</far>
+          </clip>
+        </camera>
+        <plugin name="${camera_name}_depth_plugin" filename="libgazebo_ros_camera.so">
+          <camera_name>camera</camera_name>
+          <frame_name>${camera_name}_color_optical_frame</frame_name>
+          <min_depth>0.05</min_depth>
+          <max_depth>30.0</max_depth>
+          <hack_baseline>0.0</hack_baseline>
         </plugin>
       </sensor>
     </gazebo>
