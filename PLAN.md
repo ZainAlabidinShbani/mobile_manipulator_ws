@@ -745,7 +745,30 @@ cycles complete, reporting the per-cycle summary for all 5.
             replans — and exceeds `phase6_nav_goal.py`'s timeout.  It does
             converge (0.173 m) and is collision-free.  Phase 8 RETURN_HOME needs
             a longer allowance.
-- [ ] Phase 8 — orchestrator dry-run: full sequence + failure path both correct
+- [x] Phase 8 — orchestrator dry-run: full sequence + failure path both correct
+      (`mobile_manipulator_orchestrator/warehouse_orchestrator.py`: `State` enum
+      with HOME / NAV_TO_PICK / PERCEIVE / APPROACH_ARM / GRASP / NAV_TO_DROP /
+      PLACE_ARM / RELEASE / RETURN_HOME plus RECOVERY, ABORT and DONE.  Each
+      state is its own method returning `(ok, detail)` — failure is data, never
+      an exception — and every external call is bounded by `_await_future()`,
+      which polls against a `time.monotonic()` deadline.  A deadline built from
+      `get_clock()` would expire the instant sim time arrives, so that choice is
+      load-bearing, not stylistic.  RECOVERY owns the retry budget
+      (`max_retries`, default 2) and falls through to ABORT.
+      `dry_run:=true` stubs all four interfaces (Nav2 `/navigate_to_pose`, the
+      `object_target_frame` TF wait, MoveIt `/move_action`, and
+      `/gripper_action_controller/gripper_cmd`) so the transition logic can be
+      gated with no simulator running; `dry_run_fail_state:=<STATE>` forces
+      exactly one stub to fail.  Gate, both runs:
+        success → HOME -> NAV_TO_PICK -> PERCEIVE -> APPROACH_ARM -> GRASP ->
+                  NAV_TO_DROP -> PLACE_ARM -> RELEASE -> RETURN_HOME -> DONE,
+                  exit 0;
+        failure → ... -> GRASP -> RECOVERY -> GRASP -> RECOVERY -> GRASP ->
+                  RECOVERY -> ABORT, exit 1, no hang and no crash.
+      Live-path notes for Phase 9: `nav_timeout` defaults to 180 s because the
+      return leg through the 0.934 m barrier gate is slow, and the MoveGroup
+      request sends an empty `is_diff` RobotState so it can never echo the
+      Gazebo mimic joint names back and crash move_group.)
 - [ ] Phase 9 — one full real cycle succeeds end-to-end
 - [ ] Phase 10 — `colcon test` all green
 - [ ] Phase 11 — 5 consecutive cycles succeed unattended
