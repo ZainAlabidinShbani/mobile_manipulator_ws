@@ -72,6 +72,7 @@
     <disable_collisions link1="arm_base_link_inertia" link2="front_right_wheel_link" reason="Never"/>
     <disable_collisions link1="arm_base_link_inertia" link2="gps_link" reason="Never"/>
     <disable_collisions link1="arm_base_link_inertia" link2="imu_link" reason="Never"/>
+    <disable_collisions link1="arm_base_link_inertia" link2="lidar_link" reason="Never"/>
     <disable_collisions link1="arm_base_link_inertia" link2="rear_left_wheel_link" reason="Never"/>
     <disable_collisions link1="arm_base_link_inertia" link2="rear_right_wheel_link" reason="Never"/>
     <disable_collisions link1="arm_base_link_inertia" link2="top_plate_link" reason="Never"/>
@@ -83,6 +84,7 @@
     <disable_collisions link1="arm_mounting_plate" link2="front_right_wheel_link" reason="Never"/>
     <disable_collisions link1="arm_mounting_plate" link2="gps_link" reason="Never"/>
     <disable_collisions link1="arm_mounting_plate" link2="imu_link" reason="Never"/>
+    <disable_collisions link1="arm_mounting_plate" link2="lidar_link" reason="Never"/>
     <disable_collisions link1="arm_mounting_plate" link2="rear_left_wheel_link" reason="Never"/>
     <disable_collisions link1="arm_mounting_plate" link2="rear_right_wheel_link" reason="Never"/>
     <disable_collisions link1="arm_mounting_plate" link2="top_plate_link" reason="Adjacent"/>
@@ -92,6 +94,7 @@
     <disable_collisions link1="arm_shoulder_link" link2="front_right_wheel_link" reason="Never"/>
     <disable_collisions link1="arm_shoulder_link" link2="gps_link" reason="Never"/>
     <disable_collisions link1="arm_shoulder_link" link2="imu_link" reason="Never"/>
+    <disable_collisions link1="arm_shoulder_link" link2="lidar_link" reason="Never"/>
     <disable_collisions link1="arm_shoulder_link" link2="rear_left_wheel_link" reason="Never"/>
     <disable_collisions link1="arm_shoulder_link" link2="rear_right_wheel_link" reason="Never"/>
     <disable_collisions link1="arm_shoulder_link" link2="top_plate_link" reason="Never"/>
@@ -138,6 +141,7 @@
     <disable_collisions link1="base_link" link2="front_right_wheel_link" reason="Adjacent"/>
     <disable_collisions link1="base_link" link2="gps_link" reason="Adjacent"/>
     <disable_collisions link1="base_link" link2="imu_link" reason="Adjacent"/>
+    <disable_collisions link1="base_link" link2="lidar_link" reason="Adjacent"/>
     <disable_collisions link1="base_link" link2="rear_left_wheel_link" reason="Adjacent"/>
     <disable_collisions link1="base_link" link2="rear_right_wheel_link" reason="Adjacent"/>
     <disable_collisions link1="base_link" link2="top_plate_link" reason="Adjacent"/>
@@ -164,15 +168,18 @@
     <disable_collisions link1="front_left_wheel_link" link2="front_right_wheel_link" reason="Never"/>
     <disable_collisions link1="front_left_wheel_link" link2="gps_link" reason="Never"/>
     <disable_collisions link1="front_left_wheel_link" link2="imu_link" reason="Never"/>
+    <disable_collisions link1="front_left_wheel_link" link2="lidar_link" reason="Never"/>
     <disable_collisions link1="front_left_wheel_link" link2="rear_left_wheel_link" reason="Never"/>
     <disable_collisions link1="front_left_wheel_link" link2="rear_right_wheel_link" reason="Never"/>
     <disable_collisions link1="front_left_wheel_link" link2="top_plate_link" reason="Never"/>
     <disable_collisions link1="front_right_wheel_link" link2="gps_link" reason="Never"/>
     <disable_collisions link1="front_right_wheel_link" link2="imu_link" reason="Never"/>
+    <disable_collisions link1="front_right_wheel_link" link2="lidar_link" reason="Never"/>
     <disable_collisions link1="front_right_wheel_link" link2="rear_left_wheel_link" reason="Never"/>
     <disable_collisions link1="front_right_wheel_link" link2="rear_right_wheel_link" reason="Never"/>
     <disable_collisions link1="front_right_wheel_link" link2="top_plate_link" reason="Never"/>
     <disable_collisions link1="gps_link" link2="imu_link" reason="Never"/>
+    <disable_collisions link1="gps_link" link2="lidar_link" reason="Never"/>
     <disable_collisions link1="gps_link" link2="rear_left_wheel_link" reason="Never"/>
     <disable_collisions link1="gps_link" link2="rear_right_wheel_link" reason="Never"/>
     <disable_collisions link1="gps_link" link2="top_plate_link" reason="Never"/>
@@ -221,9 +228,13 @@
     <disable_collisions link1="gripper_robotiq_85_right_inner_knuckle_link" link2="gripper_robotiq_85_right_knuckle_link" reason="Never"/>
     <disable_collisions link1="gripper_robotiq_85_right_inner_knuckle_link" link2="gripper_ur_to_robotiq_link" reason="Never"/>
     <disable_collisions link1="gripper_robotiq_85_right_knuckle_link" link2="gripper_ur_to_robotiq_link" reason="Never"/>
+    <disable_collisions link1="imu_link" link2="lidar_link" reason="Never"/>
     <disable_collisions link1="imu_link" link2="rear_left_wheel_link" reason="Never"/>
     <disable_collisions link1="imu_link" link2="rear_right_wheel_link" reason="Never"/>
     <disable_collisions link1="imu_link" link2="top_plate_link" reason="Never"/>
+    <disable_collisions link1="lidar_link" link2="rear_left_wheel_link" reason="Never"/>
+    <disable_collisions link1="lidar_link" link2="rear_right_wheel_link" reason="Never"/>
+    <disable_collisions link1="lidar_link" link2="top_plate_link" reason="Never"/>
     <disable_collisions link1="rear_left_wheel_link" link2="rear_right_wheel_link" reason="Never"/>
     <disable_collisions link1="rear_left_wheel_link" link2="top_plate_link" reason="Never"/>
     <disable_collisions link1="rear_right_wheel_link" link2="top_plate_link" reason="Never"/>

@@ -75,6 +75,19 @@
   <xacro:include filename="$(find husky_description)/urdf/husky.urdf.xacro"/>
 
   <!-- ──────────────────────────────────────────────────────────────
+       1b. FRONT 2D LIDAR  (our macro — Phase 6 navigation sensor)
+       Puck at the front bumper, scan plane 0.30 m above ground.
+       Gazebo ray sensor (publishes /scan) is added by gazebo.xacro.
+       ────────────────────────────────────────────────────────────── -->
+  <xacro:include filename="$(find mobile_manipulator_description)/urdf/lidar_2d.xacro"/>
+
+  <xacro:lidar_2d_mount
+      parent="base_link"
+      xyz="0.52 0.0 0.1677"
+      rpy="0.0 0.0 0.0"
+      name="lidar"/>
+
+  <!-- ──────────────────────────────────────────────────────────────
        2. ARM MOUNTING PLATE  (our macro)
        Bridges top_plate_link → arm_mounting_plate → UR5 base_link
        The plate is centred on the top-plate footprint (x=0.0, y=0.0)

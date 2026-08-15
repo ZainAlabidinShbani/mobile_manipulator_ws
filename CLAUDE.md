@@ -14,10 +14,10 @@ verification gate. `prompts/` holds the per-phase task prompt plus the exact ter
 command sequence and known gotchas for that phase — **read `prompts/NN_phaseN_*.md` before
 starting a phase**; it usually already documents the traps.
 
-Status (checklist lives in `PLAN.md` §14, keep it updated): Phases 1–5 complete
-(bootstrap, description, ros2_control, Gazebo world, MoveIt 2 config). Phases 6–11
-pending — `mobile_manipulator_navigation`, `mobile_manipulator_perception`, and
-`mobile_manipulator_orchestrator` are deliberately empty skeletons awaiting their phase.
+Status (checklist lives in `PLAN.md` §14, keep it updated): Phases 1–6 complete
+(bootstrap, description, ros2_control, Gazebo world, MoveIt 2 config, Nav2). Phases
+7–11 pending — `mobile_manipulator_perception` and `mobile_manipulator_orchestrator`
+are deliberately empty skeletons awaiting their phase.
 
 ## Non-negotiable project rules (`.agents/rules/instructions.md`)
 
@@ -69,6 +69,17 @@ ros2 run mobile_manipulator_moveit_config phase5_plan_execute.py \
   --goal-config 0.0 -1.1175 0.1054 -1.2083 -1.5708 0.0 \
   --workbench 1.307 0.0 1.000 1.50 0.80 0.03 --workbench-frame odom
 ros2 launch mobile_manipulator_moveit_config demo.launch.py          # mock bench, no Gazebo
+
+# Phase 6 gate — Nav2 (Gazebo from Phase 4 running; kill home_hold first!)
+pkill -f "[h]ome_hold"                    # it pins cmd_vel to zero at 50 Hz
+ros2 launch mobile_manipulator_navigation nav2_bringup.launch.py
+ros2 run mobile_manipulator_navigation phase6_nav_goal.py --goal 2.9 0.0 0.0
+
+# Re-map the warehouse (only needed if the world changes)
+ros2 launch mobile_manipulator_navigation slam.launch.py
+ros2 run mobile_manipulator_navigation mapping_drive.py --ros-args -p use_sim_time:=true
+ros2 run nav2_map_server map_saver_cli \
+  -f src/mobile_manipulator_navigation/maps/warehouse --ros-args -p use_sim_time:=true
 
 # Tests (Phase 10 will populate them)
 colcon test --packages-select <pkg> && colcon test-result --verbose
@@ -165,6 +176,23 @@ the mobile base from diff_drive's TF; that is why `demo.launch.py` spawns
 `move_group.launch.py` (move_group only, for the Phase 4 Gazebo stack) — running both at
 once gives you two controller managers.
 
+### Navigation (`mobile_manipulator_navigation`)
+
+`config/nav2_params.yaml` runs **AMCL against the saved map** (`maps/warehouse.yaml`),
+not live SLAM — `launch/slam.launch.py` + `scripts/mapping_drive.py` exist only to
+regenerate that map after a world change. AMCL's `set_initial_pose` is `(0,0,0)`,
+which is valid only because slam_toolbox anchors the map frame where mapping started,
+so **map ≡ world** provided mapping begins at the spawn pose. Costmaps use the real
+footprint (chassis + the lidar puck that protrudes to x = +0.575), inscribed radius
+0.35 m, `inflation_radius: 0.75`. DWB uses the **`ObstacleFootprint`** critic, not the
+default `BaseObstacle` — the barrier gate at x = 1.6 is 0.934 m wide for a 0.70 m
+robot, and `BaseObstacle` (which scores only the centre cell) vetoes every trajectory
+through it. `cmd_vel` is remapped to `/diff_drive_controller/cmd_vel_unstamped`.
+
+`scripts/phase6_nav_goal.py` is the phase gate: it publishes one `/goal_pose`, records
+the `/plan`, tracks Gazebo ground truth, and checks the robot polygon against every
+obstacle footprint parsed out of `warehouse.world`.
+
 ## Environment traps worth knowing before you debug
 
 - `ROS_LOCALHOST_ONLY=1` is mandatory on this machine (WiFi + VPN interfaces make FastDDS
@@ -188,6 +216,25 @@ once gives you two controller managers.
   end-effector world positions with `gz model -m mobile_manipulator -p`, never with
   `/diff_drive_controller/odom`. This will invalidate any grasp pose computed before the
   arm moves — fix before Phase 8.
+- **The base has no laser scanner until `urdf/lidar_2d.xacro` is included** (added in
+  Phase 6): front puck, scan plane **0.30 m**, 220° FOV. The FOV cannot exceed ±110°
+  at that mount point or the robot scans its own chassis corners (113.7°) and wheel
+  tops (127°). Anything shorter than 0.30 m — euro pallets are 0.145 m — is invisible
+  to SLAM, AMCL and both costmaps, so Nav2 will plan straight through a pallet.
+- **Skid-steer odometry is only trustworthy after calibration.** `/odom` yaw was 27 %
+  low with Clearpath's `wheel_separation_multiplier: 1.875`; the measured effective
+  track on this slab is 0.70 m, hence **1.37** (with vendor wheel `mu2` patched to
+  **0.15**). Get this wrong and slam_toolbox diverges inside a single turn while
+  reporting no errors. Re-measure with `gz model -m mobile_manipulator -p` after any
+  change to wheel friction, mass, or the arm's stowed pose.
+- **Rotating in place is the expensive manoeuvre**: a hard stiction deadband below
+  ~0.27 rad/s (the base simply does not move, so any tapering P-controller stalls),
+  and it walks the base sideways ~0.12 m per radian. Rolling turns track within 2 %.
+- **`home_hold.py` fights any navigation stack** — it publishes zero `cmd_vel` at
+  50 Hz. `pkill -f "[h]ome_hold"` before sending goals.
+- A stale `gzserver` holds port 11345 and the next launch dies with `Address already
+  in use` deep in the log. Kill by PID (`pgrep -f gzserver`): `pkill -f` patterns also
+  match the shell running them.
 - URDF built via `Command([...xacro...])` in a launch file **must** be wrapped in
   `ParameterValue(..., value_type=str)`, else launch dies with "Unable to parse the value
   of parameter robot_description as yaml".
@@ -208,7 +255,10 @@ once gives you two controller managers.
 ros2_control, gazebo_ros_pkgs come from apt (see `PLAN.md` §2 / `prompts/00_environment_preflight.sh`).
 **`husky_description` is not available on Humble via apt** — it is cloned from
 `github.com/akrbot/husky_description_ros2` into `src/husky_description` as a *nested git
-repo* (a bare gitlink, not a configured submodule), and it carries a local uncommitted
-patch (`urdf/husky.urdf.xacro`, the `HUSKY_GAZEBO_PLUGINS` guard). Do not blow away or
+repo* (a bare gitlink, not a configured submodule), and it carries two local patches
+committed inside its own history: the `HUSKY_GAZEBO_PLUGINS` guard in
+`urdf/husky.urdf.xacro`, and wheel lateral friction `mu2` 1.0 → 0.15 in
+`urdf/wheel.urdf.xacro` (without which the skid-steer base cannot rotate in place).
+Do not blow away or
 re-clone that directory without re-applying the patch, and commit changes to it inside its
 own repo.

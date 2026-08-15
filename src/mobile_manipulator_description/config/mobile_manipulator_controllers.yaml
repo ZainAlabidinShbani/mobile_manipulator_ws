@@ -51,13 +51,16 @@ diff_drive_controller:
 
     wheel_separation: 0.5118
     wheel_radius: 0.1651
-    # Skid-steer slip compensation (Clearpath value): in-place rotation drags
-    # four fixed wheels sideways, so the effective track is much wider than the
-    # geometric 0.5118 m. Scales both the commanded wheel differential and the
-    # odometry yaw. Pairs with the mu2=0.5 lateral-friction patch in
-    # husky_description/urdf/wheel.urdf.xacro — without these the base cannot
-    # rotate in place at all (wheels saturate against lateral friction).
-    wheel_separation_multiplier: 1.875
+    # Skid-steer slip compensation: rotating drags four fixed wheels sideways,
+    # so the effective track is wider than the geometric 0.5118 m.  Measured
+    # against Gazebo ground truth on this world's slab (mu2=0.15 patch in
+    # husky_description/urdf/wheel.urdf.xacro): a measured wheel differential
+    # of 0.275 m/s produces a body yaw of 0.393 rad/s, i.e. an effective track
+    # of 0.70 m = 1.37 x geometric.  This value is what makes /odom's yaw match
+    # reality — Clearpath's 1.875 (real Husky, loose ground) makes odometry
+    # under-report yaw by 27 %, which is far too much for the SLAM scan matcher
+    # to absorb and it diverges within one turn.
+    wheel_separation_multiplier: 1.37
 
     use_stamped_vel: false
     publish_rate: 50.0

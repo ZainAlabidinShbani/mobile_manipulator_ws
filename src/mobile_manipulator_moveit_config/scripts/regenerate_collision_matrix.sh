@@ -17,11 +17,17 @@
 # Everything except <disable_collisions> lives in the .srdf.base file, so the
 # hand-authored semantics are never clobbered by a regeneration.
 # ─────────────────────────────────────────────────────────────────────────────
-set -euo pipefail
+set -eo pipefail
 
 PKG_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
+# source before enabling -u: setup.bash reads AMENT_TRACE_SETUP_FILES unguarded
 source /opt/ros/humble/setup.bash
+# overlay: collisions_updater resolves this package + the description
+# package through ament_index, so the workspace must be sourced too
+WS_SETUP="${PKG_DIR}/../../install/setup.bash"
+[ -f "${WS_SETUP}" ] && source "${WS_SETUP}"
+set -u
 
 /opt/ros/humble/lib/moveit_setup_assistant/collisions_updater \
   --urdf   "${PKG_DIR}/config/mobile_manipulator.urdf.xacro" \

@@ -192,13 +192,17 @@ commanded in-place spins produced ~0.005 rad/s, the base simply could not
 rotate):
 
 - `husky_description/urdf/wheel.urdf.xacro` (nested vendor repo, local
-  patch): wheel `mu2` 1.0 → **0.5** — isotropic friction let the lateral
-  force of four fixed wheels cancel the available yaw torque
-  (4·µN·track/2 ≈ 163 N·m driving vs ≈ 150 N·m resisting).
+  patch): wheel `mu2` 1.0 → **0.15** — isotropic friction let the lateral
+  force of four fixed wheels cancel the available yaw torque.
 - `mobile_manipulator_controllers.yaml`: **`wheel_separation_multiplier:
-  1.875`** (Clearpath's own skid compensation value).
-- Verified: 0.5 rad/s commanded → ≈ 0.37 rad/s actual body yaw (74 %),
-  position walk ≈ 0.27 m per full spin — normal skid-steer behaviour.
+  1.37`**, the *measured* effective track (0.70 m) of this base on this
+  slab, not Clearpath's 1.875 (which is for the real Husky on loose ground).
+
+  Both numbers were first set to mu2 = 0.5 / multiplier = 1.875 here in
+  Phase 4, which fixed gross rotation but left odometry under-reporting yaw
+  by 27 % — enough to make the Phase 6 SLAM scan matcher diverge inside one
+  turn. Phase 6 re-derived them against Gazebo ground truth; see
+  `prompts/06_phase6_nav2.md` for the calibration procedure and numbers.
 
 Gate re-verification after the rework: robot pose bit-identical over 30 s
 at spawn, RTF **0.96 headless / ≈ 0.7 with gzclient** (kill gzclient before

@@ -32,7 +32,7 @@
 <robot xmlns:xacro="http://www.ros.org/wiki/xacro">
 
   <xacro:macro name="mobile_manipulator_gazebo"
-               params="camera_name:='camera' controllers_yaml:=''">
+               params="camera_name:='camera' lidar_name:='lidar' controllers_yaml:=''">
 
     <!-- ══════════════════════════════════════════════════════════════════
          gazebo_ros2_control plugin
@@ -76,6 +76,49 @@
           <camera_name>camera/color</camera_name>
           <frame_name>${camera_name}_color_optical_frame</frame_name>
           <hack_baseline>0.07</hack_baseline>
+        </plugin>
+      </sensor>
+    </gazebo>
+
+
+    <!-- ══════════════════════════════════════════════════════════════════
+         Front 2D lidar — publishes sensor_msgs/LaserScan on /scan
+         (Phase 6: slam_toolbox mapping, AMCL localization, Nav2 costmaps)
+         FOV ±110° so no ray ever hits the chassis or wheel tops; see
+         lidar_2d.xacro for the mount geometry that guarantees this.
+         ══════════════════════════════════════════════════════════════════ -->
+    <gazebo reference="${lidar_name}_link">
+      <sensor name="${lidar_name}_2d" type="ray">
+        <always_on>true</always_on>
+        <visualize>false</visualize>
+        <update_rate>10.0</update_rate>
+        <pose>0 0 0 0 0 0</pose>
+        <ray>
+          <scan>
+            <horizontal>
+              <samples>440</samples>
+              <resolution>1</resolution>
+              <min_angle>-1.919862</min_angle>
+              <max_angle>1.919862</max_angle>
+            </horizontal>
+          </scan>
+          <range>
+            <min>0.12</min>
+            <max>25.0</max>
+            <resolution>0.01</resolution>
+          </range>
+          <noise>
+            <type>gaussian</type>
+            <mean>0.0</mean>
+            <stddev>0.008</stddev>
+          </noise>
+        </ray>
+        <plugin name="${lidar_name}_2d_plugin" filename="libgazebo_ros_ray_sensor.so">
+          <ros>
+            <remapping>~/out:=/scan</remapping>
+          </ros>
+          <output_type>sensor_msgs/LaserScan</output_type>
+          <frame_name>${lidar_name}_link</frame_name>
         </plugin>
       </sensor>
     </gazebo>
