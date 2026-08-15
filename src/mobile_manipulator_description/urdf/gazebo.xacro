@@ -4,11 +4,13 @@
   ──────────────────────────────────────────────────────────────────────────────
   Phase 4 — Gazebo-only elements for the mobile manipulator:
 
-    1. gazebo_ros2_control model plugin (libgazebo_ros2_control.so)
-       Instantiates the controller_manager INSIDE gzserver, wires the
-       gazebo_ros2_control/GazeboSystem hardware (declared in
+    1. gz_ros2_control system plugin (libgz_ros2_control-system.so)
+       Instantiates the controller_manager INSIDE the gz-sim server, wires
+       the gz_ros2_control/GazeboSimSystem hardware (declared in
        ros2_control.xacro with use_gazebo:=true) to the simulated joints,
        and loads the controller configuration from the given YAML file.
+       Unlike Classic, the plugin is addressed by its C++ class name
+       (gz_ros2_control::GazeboSimROS2ControlPlugin), not an arbitrary one.
 
     2. D435i RGB camera sensor (libgazebo_ros_camera.so)
        Referenced to camera_color_frame (the colour module's body frame,
@@ -73,13 +75,14 @@
          ══════════════════════════════════════════════════════════════════ -->
 
     <!-- ══════════════════════════════════════════════════════════════════
-         gazebo_ros2_control plugin
+         gz_ros2_control plugin
          The <parameters> path is injected at launch time as an absolute
-         path (xacro arg) — gzserver does not resolve $(find ...) inside
-         plugin SDF elements, so we never rely on that substitution.
+         path (xacro arg) — the gz-sim server does not resolve $(find ...)
+         inside plugin SDF elements, so we never rely on that substitution.
          ══════════════════════════════════════════════════════════════════ -->
     <gazebo>
-      <plugin name="gazebo_ros2_control" filename="libgazebo_ros2_control.so">
+      <plugin filename="libgz_ros2_control-system.so"
+              name="gz_ros2_control::GazeboSimROS2ControlPlugin">
         <robot_param>robot_description</robot_param>
         <robot_param_node>robot_state_publisher</robot_param_node>
         <parameters>${controllers_yaml}</parameters>

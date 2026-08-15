@@ -1,22 +1,29 @@
 #!/usr/bin/env python3
 # gazebo_warehouse.launch.py
 # ─────────────────────────────────────────────────────────────────────────────
-# Phase 4 — start Gazebo Classic with the warehouse world and spawn the
-# mobile manipulator at its named "home" pose, driving the base + arm +
-# gripper through the gazebo_ros2_control plugin (controller manager runs
-# INSIDE gzserver via libgazebo_ros2_control.so — no separate
+# Phase 4 — start Gazebo Fortress (gz-sim 6) with the warehouse world and
+# spawn the mobile manipulator at its named "home" pose, driving the base +
+# arm + gripper through gz_ros2_control (the controller manager runs INSIDE
+# the gz-sim server via libgz_ros2_control-system.so — there is no separate
 # ros2_control_node process).
 #
 # The robot URDF is generated with use_gazebo:=true, which:
-#   * swaps every ros2_control hardware block to gazebo_ros2_control/GazeboSystem
-#   * adds the gazebo_ros2_control model plugin + D435i RGB camera sensor
-#     (image published on /camera/color/image_raw)
-# The generated URDF is post-processed: XML comments are stripped because
-# gazebo_ros2_control 0.4.x re-injects the URDF into its own node as an
-# rcl "--param robot_description:=<xml>" override, and rcl's YAML lexer
-# chokes on comment characters (": ", box-drawing glyphs) in the value.
-# HUSKY_GAZEBO_PLUGINS=0 suppresses the classic gazebo_ros diff_drive /
-# joint-state / imu / gps plugins that would conflict with ros2_control.
+#   * swaps every ros2_control hardware block to gz_ros2_control/GazeboSimSystem
+#   * adds the gz_ros2_control system plugin + the D435i camera/depth sensors
+#     and the front 2D lidar
+#
+# MIGRATION NOTE (Gazebo Classic → Fortress, Jan 2025 EOL):
+#   gazebo_ros/gazebo.launch.py  → ros_gz_sim/gz_sim.launch.py
+#   gazebo_ros spawn_entity.py   → ros_gz_sim `create`  (-entity became -name)
+#   GAZEBO_MODEL_PATH            → IGN_GAZEBO_RESOURCE_PATH
+# On Fortress the binary is `ign gazebo`, not `gz sim` (that is Garden and
+# later); gz_sim.launch.py picks the right one from gz_version, which must
+# stay '6'.  /usr/bin/gz belongs to Gazebo Classic, which is still installed.
+#
+# Unlike Classic, sim time does NOT arrive by itself: gz-sim publishes it on
+# the gz transport topic /clock, and it has to cross the ros_gz bridge before
+# any use_sim_time node (controller_manager included) will step.  The clock
+# bridge below is therefore load-bearing, not a convenience.
 # ─────────────────────────────────────────────────────────────────────────────
 import os
 import re
@@ -31,7 +38,7 @@ from launch.actions import (
 )
 from launch.event_handlers import OnProcessExit
 from launch.launch_description_sources import PythonLaunchDescriptionSource
-from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
+from launch.substitutions import LaunchConfiguration, PathJoinSubstitution, PythonExpression
 from launch_ros.actions import Node
 from launch_ros.substitutions import FindPackageShare
 
@@ -41,32 +48,31 @@ def generate_launch_description():
     gazebo_pkg = FindPackageShare('mobile_manipulator_gazebo')
 
     world_file = PathJoinSubstitution([gazebo_pkg, 'worlds', 'warehouse.world'])
-    controllers_yaml = PathJoinSubstitution(
-        [description_share, 'config', 'mobile_manipulator_controllers.yaml'])
 
     # ── Suppress the classic gazebo_ros plugins from husky_description ──────
-    # (diff_drive / joint_state_publisher / imu / gps would conflict with the
-    # ros2_control + gazebo_ros2_control stack used in this launch).
+    # Fortress ignores unknown Classic plugin filenames anyway, but the guard
+    # keeps them out of the SDF entirely instead of emitting a load error per
+    # plugin on every startup.
     os.environ['HUSKY_GAZEBO_PLUGINS'] = '0'
 
     # ── Model resolution ────────────────────────────────────────────────────
     # The URDF→SDF converter rewrites package:// mesh URIs to model:// URIs
-    # (e.g. model://husky_description/meshes/base_link.dae), so the package
-    # directories must be reachable through GAZEBO_MODEL_PATH.  Without this,
-    # gzserver falls back to the (long dead) online model database and hangs
-    # the world-update loop, which also blocks the gazebo_ros2_control plugin
-    # from ever loading.
+    # (e.g. model://husky_description/meshes/base_link.dae), and the world's
+    # <include><uri>model://bookshelf</uri> entries resolve the same way, so
+    # every directory holding a model must be on the resource path.  Fortress
+    # reads IGN_GAZEBO_RESOURCE_PATH; GZ_SIM_RESOURCE_PATH is set too because
+    # gz_sim.launch.py forwards both and later gz versions only read the
+    # latter.  Note ros_gz_sim's launch file APPENDS to whatever is already in
+    # the environment, so setting these here is additive, not a clobber.
     ws_src = os.path.join(os.path.dirname(os.path.dirname(
         get_package_prefix('mobile_manipulator_gazebo'))), 'src')
-    gazebo_model_path = os.pathsep.join([
+    resource_path = os.pathsep.join([
         os.path.expanduser('~/.gazebo/models'),
         ws_src,
         '/opt/ros/humble/share',
-        '/usr/share/gazebo-11/models',
     ])
-    os.environ['GAZEBO_MODEL_PATH'] = gazebo_model_path
-    # Never fall back to the online database (fail fast instead of hanging).
-    os.environ['GAZEBO_MODEL_DATABASE_URI'] = ''
+    os.environ['IGN_GAZEBO_RESOURCE_PATH'] = resource_path
+    os.environ['GZ_SIM_RESOURCE_PATH'] = resource_path
 
     # ── Home pose arguments (named "home" spawn pose) ────────────────────────
     home_x = LaunchConfiguration('home_x', default='0.0')
@@ -81,30 +87,39 @@ def generate_launch_description():
     declare_home_yaw = DeclareLaunchArgument('home_yaw', default_value='0.0', description='Home pose yaw [rad]')
     declare_gui = DeclareLaunchArgument(
         'gui', default_value='true',
-        description='Start gzclient too. false = headless gzserver, which leaves the cores for sensor rendering.')
+        description='Start the gz-sim GUI too. false = headless server, which leaves the cores for sensor rendering.')
 
-    # ── Gazebo server (+ client unless gui:=false) with the warehouse world ──
-    # gzclient is a full 3D render of the whole warehouse and it competes with
-    # gzserver's own sensor rendering for the same cores and GPU.  On an 8-core
-    # box, running it alongside the two 640x480 wrist cameras drops those
-    # cameras from ~3 Hz to under 0.3 Hz, which starves everything downstream of
-    # them (Phase 7's detector, most obviously).  Pass gui:=false for headless
-    # runs.  Note gzclient only actually starts when DISPLAY is set, so this
-    # first bites on the phase that needs a display for something else.
+    # ── Gazebo Sim server (+ GUI unless gui:=false) with the warehouse world ─
+    # The GUI renders the whole warehouse and competes with the server's own
+    # sensor rendering for the same cores and GPU.  On an 8-core box, running
+    # it alongside the two 640x480 wrist cameras drops those cameras from
+    # ~6 Hz to under 0.3 Hz, which starves everything downstream of them
+    # (Phase 7's detector, most obviously).  Pass gui:=false for headless runs.
+    #
+    # gz_args flags:  -r  start the world unpaused (Classic ran on load)
+    #                 -s  server only, no GUI process
+    #                 -v4 info-level logging, the Classic verbose:=true analogue
+    gz_args = [
+        PythonExpression([
+            '"-r -v 4 " if "', gui, '" in ("true", "True", "1") else "-s -r -v 4 "',
+        ]),
+        world_file,
+    ]
     gazebo = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
-            PathJoinSubstitution([FindPackageShare('gazebo_ros'), 'launch', 'gazebo.launch.py'])),
+            PathJoinSubstitution([FindPackageShare('ros_gz_sim'), 'launch', 'gz_sim.launch.py'])),
         launch_arguments={
-            'world': world_file,
-            'verbose': 'true',
-            'gui': gui,
+            'gz_args': gz_args,
+            'gz_version': '6',
+            'on_exit_shutdown': 'true',
         }.items(),
     )
 
     # ── Robot description (gazebo flavour) ───────────────────────────────────
-    # Generated eagerly so the URDF string can be post-processed: gazebo_ros2_control
-    # 0.4.x re-parses robot_description as an rcl "--param name:=value" override,
-    # whose YAML lexer rejects characters found in XML comments.
+    # Generated eagerly so the URDF string can be post-processed: comments are
+    # stripped because the description is round-tripped through node parameter
+    # overrides whose YAML lexer rejects characters found in XML comments
+    # (": ", box-drawing glyphs).
     xacro_proc = subprocess.run(
         ['xacro',
          os.path.join(description_share, 'urdf', 'mobile_manipulator.urdf.xacro'),
@@ -122,24 +137,40 @@ def generate_launch_description():
         output='screen',
     )
 
+    # ── Clock bridge ─────────────────────────────────────────────────────────
+    # Load-bearing: gz-sim owns simulation time and publishes it on the gz
+    # transport topic /clock.  Without this bridge every use_sim_time node
+    # (robot_state_publisher, the controller manager's own clock, MoveIt,
+    # Nav2, the perception node) sits at t=0 forever.  Classic got this from
+    # the gazebo_ros_init plugin, which has no Fortress equivalent.
+    # Direction is gz -> ROS only ("[") so nothing can publish time back.
+    clock_bridge = Node(
+        package='ros_gz_bridge',
+        executable='parameter_bridge',
+        name='clock_bridge',
+        arguments=['/clock@rosgraph_msgs/msg/Clock[ignition.msgs.Clock'],
+        output='screen',
+    )
+
     # ── Spawn the robot at the named "home" pose ─────────────────────────────
+    # ros_gz_sim `create` replaces gazebo_ros spawn_entity.py.  The flag for
+    # the model name is -name, not -entity.
     spawn_robot = Node(
-        package='gazebo_ros',
-        executable='spawn_entity.py',
+        package='ros_gz_sim',
+        executable='create',
         arguments=[
             '-topic', 'robot_description',
-            '-entity', 'mobile_manipulator',
+            '-name', 'mobile_manipulator',
             '-x', home_x,
             '-y', home_y,
             '-z', home_z,
             '-Y', home_yaw,
-            '-timeout', '60',
         ],
         output='screen',
     )
 
     # ── Controller spawners (chained on spawn exit; the controller manager
-    #    itself lives inside gzserver via the gazebo_ros2_control plugin) ─────
+    #    itself lives inside the gz-sim server via gz_ros2_control) ───────────
     spawn_jsb = Node(
         package='controller_manager',
         executable='spawner',
@@ -194,6 +225,7 @@ def generate_launch_description():
         declare_home_yaw,
         declare_gui,
         gazebo,
+        clock_bridge,
         robot_state_publisher,
         spawn_robot,
         chain_spawn,
