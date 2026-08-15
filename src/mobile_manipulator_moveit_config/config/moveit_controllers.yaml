@@ -54,6 +54,22 @@ moveit_simple_controller_manager:
 # commanded point, which otherwise aborts every second execution with
 # "Invalid Trajectory: start point deviates from current robot state".
 trajectory_execution:
-  allowed_execution_duration_scaling: 2.0
+  # allowed_execution_duration_scaling MUST cover 1 / real-time factor.
+  #
+  # MoveIt derives this bound from the trajectory's own SIM-TIME duration and
+  # then enforces it against a WALL clock.  Running the whole Phase 9 stack
+  # (gz-sim + Nav2 + move_group + YOLOv8/torch) saturates this 8-core box: the
+  # measured real-time factor is 0.48 with a load average of 7.9, so every
+  # trajectory needs ~2.08x its nominal duration in wall time.  At the old 2.0
+  # that is a coin flip, and it presented as "Controller is taking too long to
+  # execute trajectory" on Cartesian approaches, lifts and tucks — with the
+  # bound scaling exactly as configured (2.4 s, 10.4 s, 38.7 s, 44.4 s) and
+  # the arm never finishing, because slowing the trajectory down scales both
+  # sides of the comparison and changes nothing.
+  #
+  # 6.0 covers a real-time factor down to ~0.35 with margin.  The cost of an
+  # over-generous bound is only how long a genuinely stuck arm takes to be
+  # reported; the orchestrator has its own per-state timeouts underneath it.
+  allowed_execution_duration_scaling: 6.0
   allowed_goal_duration_margin: 1.0
   allowed_start_tolerance: 0.0

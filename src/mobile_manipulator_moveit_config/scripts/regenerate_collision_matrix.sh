@@ -16,6 +16,15 @@
 #
 # Everything except <disable_collisions> lives in the .srdf.base file, so the
 # hand-authored semantics are never clobbered by a regeneration.
+#
+# WITH ONE EXCEPTION, re-merged by this script (Phase 9).  collisions_updater
+# does NOT carry the input SRDF's own <disable_collisions> entries through to
+# its output — it writes only the pairs its sampler derived, silently dropping
+# anything hand-authored.  The sampler's three-way classification (Default /
+# Always / Never) also has no category for "in collision over part of one
+# joint's range", which is precisely the camera_link vs left_knuckle case
+# documented in the .base file.  So after the sampler runs, this script splices
+# any <disable_collisions> found in the .base back into the generated file.
 # ─────────────────────────────────────────────────────────────────────────────
 set -eo pipefail
 
@@ -37,6 +46,42 @@ set -u
   --default --always --verbose \
   --trials 10000 \
   --min-collision-fraction 0.95
+
+# ── re-merge the hand-authored exceptions the sampler drops ──────────────────
+# Parsed as XML, never regex-scraped: the .base file discusses
+# <disable_collisions> inside its own comments, and a regex that does not know
+# the difference happily matches the mention instead of the tag and splices a
+# second <robot> element into the output.
+python3 - "${PKG_DIR}/config/mobile_manipulator.srdf.base" \
+         "${PKG_DIR}/config/mobile_manipulator.srdf" <<'PY'
+import sys
+import xml.etree.ElementTree as ET
+
+base_path, out_path = sys.argv[1], sys.argv[2]
+wanted = [(e.get('link1'), e.get('link2'), e.get('reason') or 'hand-authored')
+          for e in ET.parse(base_path).getroot().findall('disable_collisions')]
+
+out_root = ET.parse(out_path).getroot()
+have = {frozenset((e.get('link1'), e.get('link2')))
+        for e in out_root.findall('disable_collisions')}
+
+kept = [(a, b, r) for a, b, r in wanted if frozenset((a, b)) not in have]
+if kept:
+    text = open(out_path).read().rstrip()
+    assert text.endswith('</robot>'), 'unexpected generated SRDF layout'
+    lines = ['', '    <!--Hand-authored in mobile_manipulator.srdf.base and re-merged by',
+             '        regenerate_collision_matrix.sh: the sampler drops the input SRDF\'s',
+             '        own entries, and its Default/Always/Never classification cannot',
+             '        express a pair that collides over only part of a joint\'s range.',
+             '        The rationale for each entry lives in the .base file.-->']
+    for a, b, r in kept:
+        lines.append('    <disable_collisions link1="%s" link2="%s" reason="%s"/>'
+                     % (a, b, r))
+    merged = (text[:-len('</robot>')].rstrip() + '\n'
+              + '\n'.join(lines) + '\n</robot>\n')
+    open(out_path, 'w').write(merged)
+print('re-merged %d hand-authored exception(s) from the .base' % len(kept))
+PY
 
 echo "Wrote ${PKG_DIR}/config/mobile_manipulator.srdf"
 grep -c disable_collisions "${PKG_DIR}/config/mobile_manipulator.srdf" \

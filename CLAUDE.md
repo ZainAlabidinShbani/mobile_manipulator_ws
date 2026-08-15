@@ -343,6 +343,46 @@ with Gazebo ground truth for `world -> base_footprint` and TF (pure FK) for
   rendering: the two 640x480 wrist cameras fall from ~6 Hz to under 0.3 Hz. It
   only starts when `DISPLAY` is set, so this first bites on a phase that needs a
   display for something else (Phase 7 wants `cv2.imshow`).
+- **The Ogre2 GUI viewport renders corrupted on this machine; the workaround is
+  `gui_render_engine:=ogre`, and it is GUI-only on purpose.** Symptom: the whole
+  gz-sim window (3D scene *and* Qt's own toolbar icons) squeezes into three
+  quarters of its width with the rest black, everything textured broken into
+  vertical RGB stripes. That signature — a 3/4 width squeeze plus per-pixel
+  channel rotation — is a 24bpp buffer being consumed as 32bpp, i.e. a surface
+  stride mismatch, not a shading bug.
+  It is **not** software rendering and **not** a driver fault, so do not go
+  installing drivers. Measured, same window and same capture path each time:
+  Ogre2 on the Intel iGPU (`GL_RENDERER = Mesa Intel(R) UHD Graphics (CML GT2)`,
+  Mesa 23.2.1) corrupts; Ogre2 forced onto the discrete GTX 1650 with
+  `__NV_PRIME_RENDER_OFFLOAD=1 __GLX_VENDOR_LIBRARY_NAME=nvidia` (driver 595.84)
+  corrupts **byte-for-byte identically**; `QSG_RENDER_LOOP=basic` changes
+  nothing; **Ogre1 renders perfectly**. Two unrelated GPU/driver stacks failing
+  the same way rules the driver out. The remaining suspect is Ogre2's surface
+  handling under **XWayland** — this is a GNOME *Wayland* session
+  (`XDG_SESSION_TYPE=wayland`) and Qt runs on xcb, which it announces as
+  "Ignoring XDG_SESSION_TYPE=wayland on Gnome". The real fix is logging into a
+  native X11 session, which keeps Ogre2 and its PBR materials; `ogre` is a
+  stopgap that loses PBR.
+  `gui_render_engine` maps to `--render-engine-gui`, never `--render-engine`:
+  the *server* must stay on Ogre2 or the wrist camera stops seeing the world's
+  PBR materials, and Phase 7's detector is calibrated against that image.
+  To reproduce or re-check, capture the window rather than trusting an
+  impression — `xwd -id $(xwininfo -root -tree | grep -m1 ign-gazebo-gui |
+  awk '{print $1}')`, then decode with the 4-byte stride the header reports
+  (`bytes_per_line / width`, *not* `bits_per_pixel / 8` — getting that wrong
+  produces the very artefact you are trying to diagnose).
+- **Headless sensor rendering silently falls back to llvmpipe.** Separate from
+  the GUI issue above, and it does affect the wrist cameras.
+  `~/.ignition/rendering/ogre2.log` shows Ogre2's offscreen PBuffer path trying
+  `/dev/dri/card2` (the NVIDIA GPU), logging
+  `eglInitialize failed for device EGL_EXT_device_drm`, and settling on
+  `EGL Device: EGL_MESA_device_software` — that is the `libEGL warning: egl:
+  failed to create dri2 screen` pair you see on every headless launch. When
+  `DISPLAY` is set, ign-rendering opens a hidden XWayland window instead and
+  lands on the Intel iGPU, which is why the cameras manage 6-8 Hz rather than
+  something worse. That log file is the only place the truth is written down:
+  `glxinfo` is not installed, and `grep GL_RENDERER` on it answers "which GPU
+  am I actually on" in one command.
 - **Base creep under an extended arm was a Gazebo Classic problem and is gone.**
   Classic rolled the parked base backwards at ~1 cm/s and then lurched it ~0.4 m /
   0.65 rad after ~25 s, because the arm's un-PID'd `position` interface was held with

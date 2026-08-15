@@ -155,6 +155,15 @@ gripper_action_controller:
     action_monitor_rate: 20.0
     goal_tolerance: 0.01
     max_effort: 200.0
-    allow_stalling: false
+    # allow_stalling MUST be true for a gripper that actually grips.  Phase 9
+    # closes the jaws onto a 66 mm ball with ~10 mm of interference, so the
+    # knuckle stalls at ~0.18 rad against a 0.30 rad command — that is what a
+    # successful grasp looks like.  With allow_stalling: false the controller
+    # reports the goal ABORTED at exactly the moment the object is held, and
+    # the orchestrator's GRASP state fails on every successful pick.
+    # The orchestrator confirms the grasp separately, by checking that the
+    # knuckle came to rest inside [0.05, 0.28] rad rather than closing to the
+    # command on empty air.
+    allow_stalling: true
     stall_velocity_threshold: 0.001
     stall_timeout: 1.0

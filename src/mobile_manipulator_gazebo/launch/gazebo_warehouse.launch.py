@@ -80,6 +80,8 @@ def generate_launch_description():
     home_z = LaunchConfiguration('home_z', default='0.0')
     home_yaw = LaunchConfiguration('home_yaw', default='0.0')
     gui = LaunchConfiguration('gui', default='true')
+    hold_seconds = LaunchConfiguration('hold_seconds', default='0')
+    gui_render_engine = LaunchConfiguration('gui_render_engine', default='ogre2')
 
     declare_home_x = DeclareLaunchArgument('home_x', default_value='0.0', description='Home pose X [m]')
     declare_home_y = DeclareLaunchArgument('home_y', default_value='0.0', description='Home pose Y [m]')
@@ -88,6 +90,36 @@ def generate_launch_description():
     declare_gui = DeclareLaunchArgument(
         'gui', default_value='true',
         description='Start the gz-sim GUI too. false = headless server, which leaves the cores for sensor rendering.')
+    declare_hold_seconds = DeclareLaunchArgument(
+        'hold_seconds', default_value='0',
+        description='Seconds home_hold pins cmd_vel to zero before exiting. 0 = hold forever.')
+    # WORKAROUND, not a fix — and deliberately scoped to the GUI only.
+    #
+    # On this machine the Ogre2 GUI viewport renders corrupted: window content
+    # squeezed into three quarters of the width with the remainder black, and
+    # every textured element (the 3D scene and Qt's own toolbar icons alike)
+    # broken into vertical RGB stripes.  That signature — a 3/4 width squeeze
+    # plus per-pixel channel rotation — is a 24bpp buffer being consumed as
+    # 32bpp, i.e. a surface stride mismatch, not a shading problem.
+    #
+    # It is NOT a driver fault and NOT software rendering.  Measured, same
+    # window and same capture path each time: Ogre2 on the Intel iGPU
+    # (Mesa Intel UHD CML GT2) corrupts; Ogre2 forced onto the discrete GTX
+    # 1650 via PRIME offload corrupts byte-for-byte identically; Ogre2 with
+    # QSG_RENDER_LOOP=basic corrupts identically; Ogre1 renders perfectly.
+    # Two unrelated GPU/driver stacks failing the same way rules the driver
+    # out.  The remaining suspect is Ogre2's surface handling under XWayland
+    # (this is a GNOME *Wayland* session; Qt runs on xcb).  The real fix is a
+    # native X11 session, which keeps Ogre2 and its PBR materials.
+    #
+    # --render-engine-gui, never --render-engine: the server keeps Ogre2 so
+    # the camera and depth sensors keep rendering the world's PBR materials.
+    # Switching the server to Ogre1 would silently change what the wrist
+    # camera sees, and Phase 7's detector is calibrated against that image.
+    declare_gui_render_engine = DeclareLaunchArgument(
+        'gui_render_engine', default_value='ogre2',
+        description='Rendering engine for the GUI process only. Use ogre to work '
+                    'around the corrupted Ogre2 viewport under XWayland.')
 
     # ── Gazebo Sim server (+ GUI unless gui:=false) with the warehouse world ─
     # The GUI renders the whole warehouse and competes with the server's own
@@ -101,7 +133,8 @@ def generate_launch_description():
     #                 -v4 info-level logging, the Classic verbose:=true analogue
     gz_args = [
         PythonExpression([
-            '"-r -v 4 " if "', gui, '" in ("true", "True", "1") else "-s -r -v 4 "',
+            '"-r -v 4 --render-engine-gui ', gui_render_engine, ' " ',
+            'if "', gui, '" in ("true", "True", "1") else "-s -r -v 4 "',
         ]),
         world_file,
     ]
@@ -214,9 +247,15 @@ def generate_launch_description():
     # cmd_vel message; before that the wheels roll freely and the robot can
     # wander off after the spawn impulse.  home_hold publishes a constant
     # zero Twist (locking the wheels) and sends the arm to its stowed pose.
+    # hold_seconds > 0 makes home_hold exit after that long instead of holding
+    # forever.  warehouse_demo.launch.py (Phase 9) uses it as an event source:
+    # Nav2 must not come up while a 50 Hz zero-velocity stream is fighting its
+    # controller_server, and an OnProcessExit handler on a finite hold is a
+    # cleaner interlock than racing a pkill against the launch.
     home_hold = Node(
         package='mobile_manipulator_gazebo',
         executable='home_hold.py',
+        arguments=['--hold-seconds', hold_seconds],
         output='screen',
     )
     chain_hold = RegisterEventHandler(
@@ -228,6 +267,8 @@ def generate_launch_description():
         declare_home_z,
         declare_home_yaw,
         declare_gui,
+        declare_hold_seconds,
+        declare_gui_render_engine,
         gazebo,
         gz_ros_bridge,
         robot_state_publisher,

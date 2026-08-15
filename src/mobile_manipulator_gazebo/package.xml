@@ -29,6 +29,19 @@
   <exec_depend>xacro</exec_depend>
   <exec_depend>mobile_manipulator_description</exec_depend>
 
+  <!-- Phase 9: warehouse_demo.launch.py is the master launch, so it depends
+       on every subsystem it brings up, plus rviz2 and the moveit config
+       package whose MoveItConfigsBuilder it calls at launch-description
+       construction time. -->
+  <exec_depend>mobile_manipulator_navigation</exec_depend>
+  <exec_depend>mobile_manipulator_moveit_config</exec_depend>
+  <exec_depend>mobile_manipulator_perception</exec_depend>
+  <exec_depend>mobile_manipulator_orchestrator</exec_depend>
+  <exec_depend>moveit_ros_move_group</exec_depend>
+  <exec_depend>moveit_configs_utils</exec_depend>
+  <exec_depend>nav2_rviz_plugins</exec_depend>
+  <exec_depend>rviz2</exec_depend>
+
   <test_depend>ament_lint_auto</test_depend>
   <test_depend>ament_lint_common</test_depend>
 

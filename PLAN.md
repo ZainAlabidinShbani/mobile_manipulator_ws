@@ -769,6 +769,102 @@ cycles complete, reporting the per-cycle summary for all 5.
       return leg through the 0.934 m barrier gate is slow, and the MoveGroup
       request sends an empty `is_diff` RobotState so it can never echo the
       Gazebo mimic joint names back and crash move_group.)
-- [ ] Phase 9 — one full real cycle succeeds end-to-end
+- [~] Phase 9 — master launch built; **object transport demonstrated once
+      (run 12) but NOT repeatable**, so the gate is NOT signed off.
+      (`mobile_manipulator_gazebo/launch/warehouse_demo.launch.py` +
+      `config/warehouse_demo.rviz`.  Bringup is ordered by *observed state*,
+      not timers: each stage is separated by a gate process that polls for the
+      thing the next stage needs and exits 0, with an OnProcessExit handler
+      starting the next stage and a Shutdown on timeout.  The controllers gate
+      is a *sequence* — four active, then home_hold appeared, then it left —
+      because a stale controller_manager from an earlier session satisfied a
+      plain state check in 2 s and brought the whole stack up against a
+      simulation whose robot had not spawned.
+
+      WORKS repeatably (5+ consecutive runs): bringup ordering; HOME;
+      NAV_TO_PICK + dock (~29 mm along-body error); PERCEIVE (detection within
+      ~20 mm of gz ground truth); APPROACH_ARM; GRASP (knuckle stalls at
+      0.205-0.231 rad against a 0.30 command — the predicted band for a 66 mm
+      sphere); lift + tuck; NAV_TO_DROP + dock; PLACE_ARM; RELEASE.
+      Run 12 left `target_ball_green` on the drop bench at
+      (3.844, 3.510, 0.633) — z exactly the resting height — other two targets
+      untouched.  Runs 7 and 14 reached DONE with the object NOT delivered,
+      which is exactly why the orchestrator's own trace is not evidence.
+
+      NINE distinct defects found and fixed, each by measurement:
+        1. REACH.  The vendored 1.0 m `model://table` put targets outside the
+           UR5 envelope — /compute_ik returns NO_IK_SOLUTION beyond 0.45 m at
+           z=1.0525 and the base cannot park closer than x=3.24.  Benches
+           re-authored at 0.60 m (PBR, same leg footprint so the saved map
+           stays valid); targets moved to x=3.92, 75 mm -> 66 mm for pad
+           clearance.  Reachable band is now 0.45-0.85 m.
+        2. `topdown_quat()` never assigned z/w and geometry_msgs/Quaternion
+           defaults w=1, so every "top-down" goal was (1,0,0,1) — a 90 deg roll
+           aiming the gripper sideways along -Y.  MoveIt warned and planned
+           anyway; the descent swept the forearm into the chassis.
+        3. `grasp_offset` was measured to the fingertip LINK ORIGIN (0.109 m
+           below tool0) when the pad MESH reaches 0.160 m open / 0.169 closed.
+           The pads were driven 9 mm into the bench (measured at the stall: pad
+           face z=0.5989 against a 0.600 surface).  0.115 -> 0.145.
+        4. SRDF gap: `camera_link` vs `gripper_robotiq_85_left_knuckle_link`
+           interferes up to 3.88 mm only while the jaws close through
+           0.1-0.55 rad — neither Default nor Always nor Never, so the sampler
+           left it enabled and every plan after GRASP died on an invalid start
+           state.  An audit of all camera/bracket-vs-gripper pairs found it the
+           only interfering pair still enabled.
+        5. `collisions_updater` DROPS the input SRDF's own <disable_collisions>,
+           so regenerate_collision_matrix.sh now re-merges them — parsed as XML,
+           after a regex matched the phrase inside a comment and spliced a
+           second <robot> element into the output.
+        6. The Cartesian carry produced a ~4 rad wrist_1 excursion: 7 of 8
+           probed carry poses came back from KDL wound past 3pi/2, and
+           `jump_threshold: 0.0` DISABLES the discontinuity check.  Carry is now
+           a named joint configuration; the threshold is 1.5 rad.
+        7. **The unifying timeout cause.**  MoveIt derives its execution bound
+           from the trajectory's SIM-TIME duration and enforces it against a
+           WALL clock.  The full stack saturates this 8-core box — measured RTF
+           0.48, load average 7.9 — so trajectories need ~2.08x their duration
+           in wall time against `allowed_execution_duration_scaling: 2.0`.
+           That is why failures were non-deterministic, and why slowing the
+           trajectories changed nothing: both sides scale together.  Now 6.0.
+        8. Nav2 could not plan off the pick dock.  The live global costmap had
+           the drop goal and the whole corridor at cost 0 — the route was never
+           the problem, the START was: docking parks the footprint ~1 cm from
+           the bench legs' lethal cells, DWB vetoes every trajectory, the BT
+           escalates to Spin, and a Spin walks this skid-steer ~0.12 m sideways
+           per radian unobservably.  Added an undock before every navigation
+           goal; planner failures went from 4-6 per run to zero.
+        9. AMCL diverged on any leg requiring a turn — measured against gz
+           ground truth at 2 Hz: 0.18 m entering the turn, 0.44 m immediately
+           after, growing past 0.77 m while AMCL insisted the robot drove north
+           as it went south.  alpha4 (translation noise from rotation)
+           0.2 -> 0.6, alpha1 0.3 -> 0.6.
+
+      OPEN, and why the gate is not signed off:
+        (a) PLACE/RELEASE is not repeatable.  Run 12 delivered; run 14 flung the
+            object to (6.48, 9.41) on the floor while still logging DONE.  The
+            machine cannot tell a real delivery from a failed one — it needs
+            post-place verification (re-observe the object with the camera)
+            rather than trusting the sequence.
+        (b) The carry configuration self-collides (`arm_forearm_link` vs
+            `arm_wrist_2_link`) in some runs; /compute_ik approved it but the
+            executed configuration crosses the threshold.  Re-solve against
+            /check_state_validity with margin.
+        (c) RTF 0.48 is the environment, not the code.  Every timeout in this
+            phase traces to it.  Phases 10/11 must budget for it or cut load.
+        (d) The wrist camera image is rolled 45.8 deg at the LOOK pose (90 deg
+            at stow).  The sensor pose and TF chain are provably CORRECT —
+            camera_color_frame -> camera_color_optical_frame is exactly
+            rpy(-pi/2, 0, -pi/2), both streams stamp camera_color_optical_frame,
+            and no legacy gazebo_ros plugin remains — the roll comes from the
+            arm's wrist configuration.  Back-projection stays accurate because a
+            roll about the view axis barely moves a target near the image
+            centre.  The fix belongs in the look_pose IK, never in the node.
+        (e) The 0.60 m benches are drivable-under as far as a 0.30 m scan plane
+            is concerned; the robot drove under one during a recovery.
+        (f) The camera mount genuinely occupies the knuckle's sweep volume (the
+            bracket penetrates 11.67 mm even fully open).  Re-siting it is
+            description-level work that would invalidate Phase 7's calibration,
+            so it is deferred to hardening.)
 - [ ] Phase 10 — `colcon test` all green
 - [ ] Phase 11 — 5 consecutive cycles succeed unattended
