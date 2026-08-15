@@ -7,10 +7,14 @@ endif()
 
 find_package(ament_cmake REQUIRED)
 
-# Phase 6 will install: config/ launch/
 # Phase 9 will add:    launch/warehouse_demo.launch.py
 # Phase 10 will add:   test/
-install(DIRECTORY DESTINATION share/${PROJECT_NAME})
+install(DIRECTORY config launch maps DESTINATION share/${PROJECT_NAME})
+
+install(PROGRAMS
+  scripts/mapping_drive.py
+  scripts/phase6_nav_goal.py
+  DESTINATION lib/${PROJECT_NAME})
 
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)

@@ -7,8 +7,21 @@ endif()
 
 find_package(ament_cmake REQUIRED)
 
-# Intentionally empty — MoveIt Setup Assistant populates this in Phase 5.
-install(DIRECTORY DESTINATION share/${PROJECT_NAME})
+# MoveIt Setup Assistant output: config/, launch/ and the .setup_assistant
+# manifest that MoveItConfigsBuilder reads to locate the URDF and SRDF.
+install(DIRECTORY config launch
+  DESTINATION share/${PROJECT_NAME}
+)
+
+install(FILES .setup_assistant
+  DESTINATION share/${PROJECT_NAME}
+)
+
+install(PROGRAMS
+  scripts/regenerate_collision_matrix.sh
+  scripts/phase5_plan_execute.py
+  DESTINATION lib/${PROJECT_NAME}
+)
 
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)

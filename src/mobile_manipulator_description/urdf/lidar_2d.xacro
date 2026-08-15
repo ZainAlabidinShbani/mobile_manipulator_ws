@@ -1,0 +1,85 @@
+<?xml version="1.0"?>
+<!--
+  lidar_2d.xacro
+  ─────────────────────────────────────────────────────────────────────────────
+  Phase 6 — front-mounted 2D planar lidar for SLAM / AMCL / Nav2 costmaps.
+
+  A small scanning puck (SICK-TiM/LMS class) on a bracket at the front bumper
+  of the mobile base.  The scan plane sits at 0.30 m above the ground:
+    * above the wheel tops (0.330 m) minus the puck's forward offset — the
+      mount is pushed 0.52 m ahead of base_link so the ±110° field of view
+      clears the chassis upper box (front corners at 113.7°) and the wheel
+      tops (127°).  Keep FOV ≤ ±110° if you move this link.
+    * low enough to see the jersey-barrier mid profile, bookshelf racks and
+      table legs.  NOTE: euro pallets (0.144 m tall) are BELOW the scan plane
+      and are invisible to this sensor — they never enter SLAM maps or
+      costmaps.  The Phase 6 route keeps ≥5 m from every pallet.
+
+  The matching Gazebo ray sensor (publishing sensor_msgs/LaserScan on /scan,
+  frame lidar_link) lives in gazebo.xacro and is only emitted when the robot
+  is built with use_gazebo:=true.
+  ─────────────────────────────────────────────────────────────────────────────
+-->
+<robot xmlns:xacro="http://wiki.ros.org/xacro">
+
+  <!--
+    xacro:macro  lidar_2d_mount
+    Parameters
+      parent : link to bolt the bracket to (typically base_link)
+      xyz    : puck centre relative to parent
+               default 0.52 0 0.1677  →  0.30 m above ground on the Husky-class
+               base (base_link sits at z = wheel_radius − wheel_vertical_offset
+               = 0.13228 m)
+      rpy    : puck orientation relative to parent
+      name   : frame prefix (default "lidar" → lidar_link)
+  -->
+  <xacro:macro name="lidar_2d_mount"
+               params="parent
+                       xyz:='0.52 0.0 0.1677'
+                       rpy:='0.0 0.0 0.0'
+                       name:='lidar'">
+
+    <link name="${name}_link">
+      <visual>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry>
+          <cylinder radius="0.052" length="0.072"/>
+        </geometry>
+        <material name="${name}_puck_dark">
+          <color rgba="0.10 0.10 0.12 1.0"/>
+        </material>
+      </visual>
+      <!-- mounting bracket back to the bumper face -->
+      <visual>
+        <origin xyz="-0.055 0 -0.01" rpy="0 0 0"/>
+        <geometry>
+          <box size="0.08 0.06 0.05"/>
+        </geometry>
+        <material name="${name}_bracket_grey">
+          <color rgba="0.25 0.25 0.27 1.0"/>
+        </material>
+      </visual>
+      <collision>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry>
+          <cylinder radius="0.055" length="0.075"/>
+        </geometry>
+      </collision>
+      <inertial>
+        <mass value="0.16"/>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <inertia ixx="0.000178" ixy="0.0" ixz="0.0"
+                 iyy="0.000178" iyz="0.0"
+                 izz="0.000216"/>
+      </inertial>
+    </link>
+
+    <joint name="${name}_joint" type="fixed">
+      <parent link="${parent}"/>
+      <child  link="${name}_link"/>
+      <origin xyz="${xyz}" rpy="${rpy}"/>
+    </joint>
+
+  </xacro:macro>
+
+</robot>

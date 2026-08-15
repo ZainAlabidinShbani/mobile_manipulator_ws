@@ -4,23 +4,42 @@
   ──────────────────────────────────────────────────────────────────────────────
   Phase 4 — Gazebo-only elements for the mobile manipulator:
 
-    1. gazebo_ros2_control model plugin (libgazebo_ros2_control.so)
-       Instantiates the controller_manager INSIDE gzserver, wires the
-       gazebo_ros2_control/GazeboSystem hardware (declared in
+    1. gz_ros2_control system plugin (libgz_ros2_control-system.so)
+       Instantiates the controller_manager INSIDE the gz-sim server, wires
+       the gz_ros2_control/GazeboSimSystem hardware (declared in
        ros2_control.xacro with use_gazebo:=true) to the simulated joints,
        and loads the controller configuration from the given YAML file.
+       Unlike Classic, the plugin is addressed by its C++ class name
+       (gz_ros2_control::GazeboSimROS2ControlPlugin), not an arbitrary one.
 
-    2. D435i RGB camera sensor (libgazebo_ros_camera.so)
-       Attached to camera_color_optical_frame with a 180° roll about Z so
-       that Gazebo's rendered image (+Y up in the sensor frame) matches the
-       REP-103 ROS optical convention (row 0 = top = -Y of the optical frame).
+    2. D435i RGB camera sensor (<sensor type="camera">)
+       Referenced to camera_color_frame (the colour module's body frame,
+       X-forward) and stamped with camera_color_optical_frame — see the
+       long comment on that choice inside the macro.
 
-  NOTE: gazebo_ros camera plugins publish the raw rendered image with no
-  internal flip; the sensor pose is therefore the only place that corrects
-  for the Gazebo vs ROS optical-frame orientation difference.
-  NOTE: a depth sensor (libgazebo_ros_depth_camera.so) is intentionally NOT
-  declared — that plugin is not shipped by the ros-humble-gazebo-plugins
-  binary package, and gzserver refuses to load it.
+    3. D435i depth sensor (<sensor type="depth_camera">)
+       Publishes a 32FC1 metric depth image registered to the colour
+       stream — see the comment on the sensor block below.
+
+    4. Front 2D lidar (<sensor type="gpu_lidar">) feeding Nav2.
+
+  MIGRATION NOTE (Gazebo Classic → Fortress):
+  Sensors no longer carry a per-sensor ROS plugin. Under Fortress the
+  world-level Sensors system renders them and publishes on gz transport;
+  ros_gz_bridge then carries each topic into ROS. Consequences:
+    * The Classic type names changed: "depth" → "depth_camera" and
+      "ray" → "gpu_lidar" (whose parameters live under <lidar>, not <ray>).
+    * The ROS topic name is no longer set by <camera_name>/<remapping>.
+      It is the gz <topic> here, mapped to its final ROS name in
+      mobile_manipulator_gazebo/config/ros_gz_bridge.yaml. Change one and
+      you must change the other.
+    * frame_id is no longer <frame_name>. Fortress stamps the sensor's
+      scoped name unless <ignition_frame_id> overrides it, which is what
+      keeps back-projection landing in camera_color_optical_frame.
+      (gz-sensors accepts gz_frame_id too but prefers ignition_frame_id.)
+  NOTE: a <pose> authored on a <sensor> under a lumped fixed frame is
+  still discarded — the referenced frame's own orientation is the only
+  thing that aims the camera, exactly as it was under Classic.
 
   Usage in the top-level xacro (only when use_gazebo:=true):
     <xacro:include filename="$(find mobile_manipulator_description)/urdf/gazebo.xacro"/>
@@ -32,16 +51,49 @@
 <robot xmlns:xacro="http://www.ros.org/wiki/xacro">
 
   <xacro:macro name="mobile_manipulator_gazebo"
-               params="camera_name:='camera' controllers_yaml:=''">
+               params="camera_name:='camera' lidar_name:='lidar' controllers_yaml:=''">
 
     <!-- ══════════════════════════════════════════════════════════════════
-         gazebo_ros2_control plugin
+         WHY THE CAMERAS HANG OFF camera_color_frame, NOT
+         camera_color_optical_frame  — and why they carry no <pose>.
+
+         A Gazebo camera sensor looks down its own +X, with +Y left and +Z
+         up.  A REP-103 optical frame is +X right, +Y down, +Z forward.
+         Those differ by rpy(-pi/2, 0, -pi/2), so a sensor referenced to an
+         optical frame renders 90 deg off the lens axis and rolled 90 deg —
+         it silently photographs whatever is beside the robot.
+
+         The obvious fix, an authored <pose> on the <sensor> that rotates it
+         back, DOES NOT WORK.  Every camera_* frame reaches its parent
+         through a fixed joint, so URDF->SDF reduction lumps them all into
+         arm_wrist_3_link, and gzsdf then REPLACES the sensor's <pose> with
+         the referenced frame's transform relative to the surviving link.
+         Confirm with:
+             gz sdf -p mobile_manipulator.urdf | grep -A2 "sensor name='camera_color'"
+         which prints the frame transform, never the authored value.  Any
+         <pose> written here is dead code.
+
+         So the orientation has to come from the referenced frame itself.
+         camera_color_frame is the D435i colour module's *body* frame: same
+         origin as camera_color_optical_frame, but already X-forward /
+         Y-left / Z-up — exactly the Gazebo camera convention.  Referencing
+         it puts the sensor at the right place pointing the right way with
+         no <pose> at all, while <frame_name>camera_color_optical_frame
+         stamps the images and CameraInfo with the optical frame, whose
+         axes are by construction the (right, down, forward) of the
+         rendered image.  Back-projection therefore lands directly in
+         camera_color_optical_frame with no extra rotation.
+         ══════════════════════════════════════════════════════════════════ -->
+
+    <!-- ══════════════════════════════════════════════════════════════════
+         gz_ros2_control plugin
          The <parameters> path is injected at launch time as an absolute
-         path (xacro arg) — gzserver does not resolve $(find ...) inside
-         plugin SDF elements, so we never rely on that substitution.
+         path (xacro arg) — the gz-sim server does not resolve $(find ...)
+         inside plugin SDF elements, so we never rely on that substitution.
          ══════════════════════════════════════════════════════════════════ -->
     <gazebo>
-      <plugin name="gazebo_ros2_control" filename="libgazebo_ros2_control.so">
+      <plugin filename="libgz_ros2_control-system.so"
+              name="gz_ros2_control::GazeboSimROS2ControlPlugin">
         <robot_param>robot_description</robot_param>
         <robot_param_node>robot_state_publisher</robot_param_node>
         <parameters>${controllers_yaml}</parameters>
@@ -51,11 +103,12 @@
     <!-- ══════════════════════════════════════════════════════════════════
          D435i RGB camera — publishes /camera/color/image_raw + camera_info
          ══════════════════════════════════════════════════════════════════ -->
-    <gazebo reference="${camera_name}_color_optical_frame">
+    <gazebo reference="${camera_name}_color_frame">
       <sensor name="${camera_name}_color" type="camera">
         <always_on>true</always_on>
         <update_rate>10</update_rate>
-        <pose>0 0 0 0 0 3.141592653589793</pose>
+        <topic>camera/color/image_raw</topic>
+        <ignition_frame_id>${camera_name}_color_optical_frame</ignition_frame_id>
         <camera>
           <horizontal_fov>1.3963</horizontal_fov>
           <image>
@@ -68,15 +121,96 @@
             <far>30.0</far>
           </clip>
         </camera>
-        <plugin name="${camera_name}_color_plugin" filename="libgazebo_ros_camera.so">
-          <ros>
-            <remapping>image_raw:=/camera/color/image_raw</remapping>
-            <remapping>camera_info:=/camera/color/camera_info</remapping>
-          </ros>
-          <camera_name>camera/color</camera_name>
-          <frame_name>${camera_name}_color_optical_frame</frame_name>
-          <hack_baseline>0.07</hack_baseline>
-        </plugin>
+      </sensor>
+    </gazebo>
+
+
+    <!-- ══════════════════════════════════════════════════════════════════
+         D435i depth stream — publishes /camera/depth/image_raw (32FC1, m)
+         plus /camera/depth/camera_info (Phase 7: YOLO back-projection).
+
+         Mounted on camera_color_frame — NOT on the D435i's own
+         camera_depth_frame — with the identical horizontal FOV and
+         640x480 resolution as the colour sensor above.  That makes
+         depth pixel (u,v) correspond to colour pixel (u,v) by construction:
+         the simulated equivalent of the real D435i's
+         aligned_depth_to_color stream.  Consequences the perception node
+         relies on:
+           * /camera/color/camera_info intrinsics are exactly valid for
+             back-projecting the depth image, so one CameraInfo suffices;
+           * the recovered 3D point already lives in
+             camera_color_optical_frame, which is the parent frame Phase 7
+             broadcasts object_target_frame from — no extra TF hop, hence
+             no error from the ~15 mm colour/depth baseline of the real
+             sensor.
+
+         <camera_name>camera</camera_name> is deliberate: gazebo_ros_camera
+         derives topic names from that element (a <remapping> keyed on the
+         bare name is silently dropped), and GazeboRosCamera appends
+         "depth/image_raw" for a depth sensor.  camera + depth/image_raw
+         is what yields /camera/depth/image_raw.
+         ══════════════════════════════════════════════════════════════════ -->
+    <gazebo reference="${camera_name}_color_frame">
+      <sensor name="${camera_name}_depth" type="depth_camera">
+        <always_on>true</always_on>
+        <update_rate>10</update_rate>
+        <topic>camera/depth/image_raw</topic>
+        <ignition_frame_id>${camera_name}_color_optical_frame</ignition_frame_id>
+        <camera>
+          <horizontal_fov>1.3963</horizontal_fov>
+          <image>
+            <width>640</width>
+            <height>480</height>
+            <format>R_FLOAT32</format>
+          </image>
+          <clip>
+            <near>0.05</near>
+            <far>30.0</far>
+          </clip>
+        </camera>
+      </sensor>
+    </gazebo>
+
+
+    <!-- ══════════════════════════════════════════════════════════════════
+         Front 2D lidar — publishes sensor_msgs/LaserScan on /scan
+         (Phase 6: slam_toolbox mapping, AMCL localization, Nav2 costmaps)
+         FOV ±110° so no ray ever hits the chassis or wheel tops; see
+         lidar_2d.xacro for the mount geometry that guarantees this.
+         ══════════════════════════════════════════════════════════════════ -->
+    <gazebo reference="${lidar_name}_link">
+      <sensor name="${lidar_name}_2d" type="gpu_lidar">
+        <always_on>true</always_on>
+        <visualize>false</visualize>
+        <update_rate>10.0</update_rate>
+        <topic>scan</topic>
+        <ignition_frame_id>${lidar_name}_link</ignition_frame_id>
+        <lidar>
+          <scan>
+            <horizontal>
+              <samples>440</samples>
+              <resolution>1</resolution>
+              <min_angle>-1.919862</min_angle>
+              <max_angle>1.919862</max_angle>
+            </horizontal>
+            <vertical>
+              <samples>1</samples>
+              <resolution>1</resolution>
+              <min_angle>0.0</min_angle>
+              <max_angle>0.0</max_angle>
+            </vertical>
+          </scan>
+          <range>
+            <min>0.12</min>
+            <max>25.0</max>
+            <resolution>0.01</resolution>
+          </range>
+          <noise>
+            <type>gaussian</type>
+            <mean>0.0</mean>
+            <stddev>0.008</stddev>
+          </noise>
+        </lidar>
       </sensor>
     </gazebo>
 

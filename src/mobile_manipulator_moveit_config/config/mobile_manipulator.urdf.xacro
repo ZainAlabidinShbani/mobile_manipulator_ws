@@ -1,0 +1,31 @@
+<?xml version="1.0"?>
+<!--
+  mobile_manipulator.urdf.xacro  (MoveIt configuration entry point)
+  ─────────────────────────────────────────────────────────────────────────────
+  Phase 5 — the URDF the MoveIt Setup Assistant was pointed at.
+
+  This is a THIN WRAPPER, not a copy: it forwards to the single source of truth
+  in mobile_manipulator_description (the verified Phase 2 description) so the
+  planning model can never drift from the model Gazebo/ros2_control use.
+
+  Defaults chosen for MoveIt:
+    sensor_arch:=0    — the arm mounting plate replaces the decorative arch
+    use_gazebo:=false — move_group only needs kinematics + collision geometry;
+                        which ros2_control hardware plugin the URDF names is
+                        irrelevant to it, and the false branch keeps the URDF
+                        free of Gazebo plugin tags.  Link/joint geometry is
+                        identical under both branches.
+  ─────────────────────────────────────────────────────────────────────────────
+-->
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="mobile_manipulator">
+
+  <xacro:arg name="sensor_arch"      default="0"/>
+  <xacro:arg name="use_gazebo"       default="false"/>
+  <xacro:arg name="arm_prefix"       default="arm_"/>
+  <xacro:arg name="gripper_prefix"   default="gripper_"/>
+  <xacro:arg name="camera_name"      default="camera"/>
+  <xacro:arg name="controllers_yaml" default=""/>
+
+  <xacro:include filename="$(find mobile_manipulator_description)/urdf/mobile_manipulator.urdf.xacro"/>
+
+</robot>

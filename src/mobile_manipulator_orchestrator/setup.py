@@ -24,8 +24,8 @@ setup(
     license='Apache-2.0',
     entry_points={
         'console_scripts': [
-            # Phase 8 will register:
-            # 'orchestrator_node = mobile_manipulator_orchestrator.orchestrator_node:main',
+            'warehouse_orchestrator = '
+            'mobile_manipulator_orchestrator.warehouse_orchestrator:main',
         ],
     },
 )

@@ -2,3 +2,6 @@ build/
 install/
 log/
 .vscode/
+# Python bytecode (a .pyc under launch/ was committed by mistake in Phase 4)
+__pycache__/
+*.pyc

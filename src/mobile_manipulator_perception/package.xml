@@ -5,9 +5,9 @@
   <version>0.0.0</version>
   <description>
     YOLOv8 perception node for the mobile manipulator.
-    Subscribes to RealSense D435i RGB+depth streams, runs Ultralytics
-    YOLOv8 inference, and broadcasts an object_target_frame TF for the
-    orchestrator. Populated in Phase 7.
+    Subscribes to the RealSense D435i RGB+depth streams, runs Ultralytics
+    YOLOv8 inference on synchronised frame pairs, and broadcasts an
+    object_target_frame TF for the orchestrator.
   </description>
   <maintainer email="zain.alabidin.shbani@gmail.com">zsh</maintainer>
   <license>Apache-2.0</license>
@@ -18,6 +18,20 @@
   <depend>sensor_msgs</depend>
   <depend>geometry_msgs</depend>
   <depend>tf2_ros</depend>
+  <depend>message_filters</depend>
+  <depend>ament_index_python</depend>
+  <exec_depend>python3-numpy</exec_depend>
+
+  <!-- phase7_look_pose drives the arm to the tabletop-viewing configuration -->
+  <exec_depend>control_msgs</exec_depend>
+  <exec_depend>trajectory_msgs</exec_depend>
+
+  <!-- Ultralytics and its OpenCV build come from pip, not rosdep, and are
+       installed by the preflight step in PLAN.md section 2:
+         pip install ultralytics opencv-python
+       cv_bridge is deliberately NOT a dependency: its Humble boost extension
+       is built against numpy 1.x and breaks under the numpy 2.x that
+       Ultralytics/torch require, so the node decodes Image messages itself. -->
 
   <test_depend>ament_copyright</test_depend>
   <test_depend>ament_flake8</test_depend>

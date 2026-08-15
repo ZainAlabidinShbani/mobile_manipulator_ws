@@ -13,9 +13,17 @@
 
   <buildtool_depend>ament_cmake</buildtool_depend>
 
-  <exec_depend>gazebo_ros</exec_depend>
-  <exec_depend>gazebo_ros2_control</exec_depend>
-  <exec_depend>gazebo_plugins</exec_depend>
+  <!-- Gazebo Fortress via ros_gz (Gazebo Classic reached EOL Jan 2025).
+       ros_gz_sim   — gz_sim.launch.py + the `create` spawn executable
+       ros_gz_bridge — gz<->ROS topic bridge (/clock, camera, lidar, pose)
+       gz_ros2_control — controller_manager hosted inside gz-sim
+       ros_gz_image is deliberately NOT declared: its image_bridge derives
+       ROS topic names from the gz ones, whereas the YAML-configured
+       ros_gz_bridge pins ros_topic_name explicitly, which is what keeps
+       /camera/color/image_raw byte-identical for the perception node. -->
+  <exec_depend>ros_gz_sim</exec_depend>
+  <exec_depend>ros_gz_bridge</exec_depend>
+  <exec_depend>gz_ros2_control</exec_depend>
   <exec_depend>robot_state_publisher</exec_depend>
   <exec_depend>controller_manager</exec_depend>
   <exec_depend>xacro</exec_depend>

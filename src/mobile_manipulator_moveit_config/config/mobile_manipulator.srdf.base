@@ -1,0 +1,118 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  mobile_manipulator.srdf  (base — no <disable_collisions> yet)
+  ─────────────────────────────────────────────────────────────────────────────
+  Phase 5.  This file holds the hand-reviewable semantic description: planning
+  groups, named states, end effector and passive joints.  The self-collision
+  matrix is NOT written here: it is appended by the MoveIt Setup Assistant's
+  own sampling tool (collisions_updater) into config/mobile_manipulator.srdf,
+  which is the file actually loaded at run time.  Regenerate with:
+
+    ros2 run mobile_manipulator_moveit_config regenerate_collision_matrix.sh
+  ─────────────────────────────────────────────────────────────────────────────
+-->
+<robot name="mobile_manipulator">
+
+  <!-- ══════════════════════════════════════════════════════════════════════
+       PLANNING GROUPS
+       ══════════════════════════════════════════════════════════════════════ -->
+
+  <!-- The 6 UR5 revolute joints.  Declared as a kinematic chain so the KDL
+       solver gets a well-formed serial chain:
+         arm_base_link → (arm_base_link_inertia) → arm_shoulder_link →
+         arm_upper_arm_link → arm_forearm_link → arm_wrist_1_link →
+         arm_wrist_2_link → arm_wrist_3_link → arm_flange → arm_tool0
+       which contains exactly arm_shoulder_pan_joint, arm_shoulder_lift_joint,
+       arm_elbow_joint, arm_wrist_1_joint, arm_wrist_2_joint, arm_wrist_3_joint. -->
+  <group name="ur5_arm">
+    <chain base_link="arm_base_link" tip_link="arm_tool0"/>
+  </group>
+
+  <!-- Robotiq 2F-85.  Only robotiq_85_left_knuckle_joint is actuated; the other
+       five knuckle/finger-tip joints are URDF <mimic> followers and therefore
+       must NOT appear here (MoveIt derives them automatically). -->
+  <group name="gripper">
+    <link name="gripper_robotiq_85_base_link"/>
+    <link name="gripper_robotiq_85_left_knuckle_link"/>
+    <link name="gripper_robotiq_85_right_knuckle_link"/>
+    <link name="gripper_robotiq_85_left_finger_link"/>
+    <link name="gripper_robotiq_85_right_finger_link"/>
+    <link name="gripper_robotiq_85_left_inner_knuckle_link"/>
+    <link name="gripper_robotiq_85_right_inner_knuckle_link"/>
+    <link name="gripper_robotiq_85_left_finger_tip_link"/>
+    <link name="gripper_robotiq_85_right_finger_tip_link"/>
+    <joint name="gripper_robotiq_85_left_knuckle_joint"/>
+  </group>
+
+  <!-- ══════════════════════════════════════════════════════════════════════
+       NAMED STATES
+       ══════════════════════════════════════════════════════════════════════ -->
+
+  <!-- Matches STOWED_POSE in mobile_manipulator_gazebo/scripts/home_hold.py and
+       the initial_value entries in mobile_manipulator_description ros2_control.xacro. -->
+  <group_state name="home" group="ur5_arm">
+    <joint name="arm_shoulder_pan_joint"  value="0.0"/>
+    <joint name="arm_shoulder_lift_joint" value="-1.5708"/>
+    <joint name="arm_elbow_joint"         value="1.5708"/>
+    <joint name="arm_wrist_1_joint"       value="-1.5708"/>
+    <joint name="arm_wrist_2_joint"       value="0.0"/>
+    <joint name="arm_wrist_3_joint"       value="0.0"/>
+  </group_state>
+
+  <!-- Fully extended vertically — useful as a collision-free waypoint. -->
+  <group_state name="upright" group="ur5_arm">
+    <joint name="arm_shoulder_pan_joint"  value="0.0"/>
+    <joint name="arm_shoulder_lift_joint" value="-1.5708"/>
+    <joint name="arm_elbow_joint"         value="0.0"/>
+    <joint name="arm_wrist_1_joint"       value="-1.5708"/>
+    <joint name="arm_wrist_2_joint"       value="0.0"/>
+    <joint name="arm_wrist_3_joint"       value="0.0"/>
+  </group_state>
+
+  <!-- Arm reaching forward and down, gripper pointing at the workbench top —
+       the pre-grasp posture used by the Phase 5 verification. -->
+  <group_state name="pick_ready" group="ur5_arm">
+    <joint name="arm_shoulder_pan_joint"  value="0.0"/>
+    <joint name="arm_shoulder_lift_joint" value="-1.0472"/>
+    <joint name="arm_elbow_joint"         value="1.2217"/>
+    <joint name="arm_wrist_1_joint"       value="-1.7453"/>
+    <joint name="arm_wrist_2_joint"       value="-1.5708"/>
+    <joint name="arm_wrist_3_joint"       value="0.0"/>
+  </group_state>
+
+  <group_state name="open" group="gripper">
+    <joint name="gripper_robotiq_85_left_knuckle_joint" value="0.0"/>
+  </group_state>
+
+  <group_state name="closed" group="gripper">
+    <joint name="gripper_robotiq_85_left_knuckle_joint" value="0.8"/>
+  </group_state>
+
+  <!-- ══════════════════════════════════════════════════════════════════════
+       END EFFECTOR
+       ══════════════════════════════════════════════════════════════════════ -->
+  <end_effector name="robotiq_2f_85" parent_link="arm_tool0"
+                group="gripper" parent_group="ur5_arm"/>
+
+  <!-- ══════════════════════════════════════════════════════════════════════
+       VIRTUAL JOINT
+       The base is mobile, so base_footprint is not fixed in the world.  A
+       *planar* virtual joint lets MoveIt track the base pose from the
+       odom → base_footprint TF that diff_drive_controller publishes (Phase 3),
+       instead of pinning the robot at the origin.  Planning frame = odom.
+       ══════════════════════════════════════════════════════════════════════ -->
+  <virtual_joint name="virtual_joint" type="planar"
+                 parent_frame="odom" child_link="base_footprint"/>
+
+  <!-- ══════════════════════════════════════════════════════════════════════
+       PASSIVE JOINTS
+       The drive wheels are actuated by diff_drive_controller / Nav2, never by
+       MoveIt.  Declaring them passive keeps them out of the planning problem
+       while still letting the state monitor read them from /joint_states.
+       ══════════════════════════════════════════════════════════════════════ -->
+  <passive_joint name="front_left_wheel"/>
+  <passive_joint name="front_right_wheel"/>
+  <passive_joint name="rear_left_wheel"/>
+  <passive_joint name="rear_right_wheel"/>
+
+</robot>

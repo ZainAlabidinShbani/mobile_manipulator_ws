@@ -12,9 +12,10 @@
 
   Two hardware backends, selected with the use_gazebo flag:
     - use_gazebo:=false (default, Phase 3 test rig)  → mock_components/GenericSystem
-    - use_gazebo:=true  (Phase 4 Gazebo world)       → gazebo_ros2_control/GazeboSystem
-  GazeboSystem supports the <param name="mimic"> entries natively, so the
-  joint layout is identical for both backends.
+    - use_gazebo:=true  (Phase 4 Gazebo world)       → gz_ros2_control/GazeboSimSystem
+  GazeboSimSystem (Gazebo Fortress via gz_ros2_control) supports the
+  <param name="mimic"> entries natively, so the joint layout is identical
+  for both backends.
 
   Usage in the top-level xacro:
     <xacro:include filename="$(find mobile_manipulator_description)/urdf/ros2_control.xacro"/>
@@ -37,7 +38,7 @@
     <ros2_control name="base_system" type="system">
       <xacro:if value="${use_gazebo}">
         <hardware>
-          <plugin>gazebo_ros2_control/GazeboSystem</plugin>
+          <plugin>gz_ros2_control/GazeboSimSystem</plugin>
         </hardware>
       </xacro:if>
       <xacro:unless value="${use_gazebo}">
@@ -85,7 +86,7 @@
     <ros2_control name="arm_system" type="system">
       <xacro:if value="${use_gazebo}">
         <hardware>
-          <plugin>gazebo_ros2_control/GazeboSystem</plugin>
+          <plugin>gz_ros2_control/GazeboSimSystem</plugin>
         </hardware>
       </xacro:if>
       <xacro:unless value="${use_gazebo}">
@@ -173,7 +174,7 @@
     <ros2_control name="gripper_system" type="system">
       <xacro:if value="${use_gazebo}">
         <hardware>
-          <plugin>gazebo_ros2_control/GazeboSystem</plugin>
+          <plugin>gz_ros2_control/GazeboSimSystem</plugin>
         </hardware>
       </xacro:if>
       <xacro:unless value="${use_gazebo}">

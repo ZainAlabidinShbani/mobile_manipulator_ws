@@ -1,0 +1,17 @@
+moveit_setup_assistant_config:
+  urdf:
+    package: mobile_manipulator_moveit_config
+    relative_path: config/mobile_manipulator.urdf.xacro
+    xacro_args: sensor_arch:=0
+  srdf:
+    relative_path: config/mobile_manipulator.srdf
+  package_settings:
+    author_name: zsh
+    author_email: zain.alabidin.shbani@gmail.com
+    generated_timestamp: 1755100800
+  control_xacro:
+    command:
+      - position
+    state:
+      - position
+      - velocity

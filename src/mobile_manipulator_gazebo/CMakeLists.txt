@@ -7,8 +7,8 @@ endif()
 
 find_package(ament_cmake REQUIRED)
 
-# Phase 4: worlds/ and launch/
-install(DIRECTORY worlds launch DESTINATION share/${PROJECT_NAME})
+# Phase 4: worlds/ and launch/; config/ holds the ros_gz_bridge topic map
+install(DIRECTORY worlds launch config DESTINATION share/${PROJECT_NAME})
 
 install(PROGRAMS
   scripts/home_hold.py

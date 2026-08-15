@@ -10,6 +10,10 @@ setup(
         ('share/ament_index/resource_index/packages',
             ['resource/' + package_name]),
         ('share/' + package_name, ['package.xml']),
+        # Ship the detector weights with the package so `ros2 run` never
+        # depends on Ultralytics reaching the network mid-demo, and so the
+        # phase gate is reproducible offline.
+        ('share/' + package_name + '/models', ['models/yolov8n.pt']),
     ],
     install_requires=['setuptools'],
     zip_safe=True,
@@ -17,15 +21,20 @@ setup(
     maintainer_email='zain.alabidin.shbani@gmail.com',
     description=(
         'YOLOv8 perception node for the mobile manipulator. '
-        'Subscribes to RealSense D435i RGB+depth streams, runs '
-        'Ultralytics YOLOv8 inference, and broadcasts '
-        'object_target_frame TF. Populated in Phase 7.'
+        'Subscribes to the RealSense D435i RGB+depth streams, runs '
+        'Ultralytics YOLOv8 inference on synchronised frame pairs, and '
+        'broadcasts camera_color_optical_frame -> object_target_frame for '
+        'the orchestrator.'
     ),
     license='Apache-2.0',
     entry_points={
         'console_scripts': [
-            # Phase 7 will register:
-            # 'perception_node = mobile_manipulator_perception.perception_node:main',
+            'yolo_perception_node ='
+            ' mobile_manipulator_perception.yolo_perception_node:main',
+            'phase7_look_pose ='
+            ' mobile_manipulator_perception.phase7_look_pose:main',
+            'phase7_target_check ='
+            ' mobile_manipulator_perception.phase7_target_check:main',
         ],
     },
 )
