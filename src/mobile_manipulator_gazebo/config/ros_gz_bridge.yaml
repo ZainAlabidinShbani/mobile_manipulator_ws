@@ -73,3 +73,11 @@
   ros_type_name: "sensor_msgs/msg/Image"
   gz_type_name: "ignition.msgs.Image"
   direction: GZ_TO_ROS
+
+# Wide world-fixed view of both benches, used to record the Phase 9 cycle
+# without a GUI (see the demo_camera comment in warehouse.world).
+- ros_topic_name: "/demo_camera/image_raw"
+  gz_topic_name: "demo_camera/image_raw"
+  ros_type_name: "sensor_msgs/msg/Image"
+  gz_type_name: "ignition.msgs.Image"
+  direction: GZ_TO_ROS

@@ -1,4 +1,17 @@
 #!/usr/bin/env python3
+# Copyright 2026 Zain Alabidin Shbani
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 # warehouse_demo.launch.py
 # ─────────────────────────────────────────────────────────────────────────────
 # Phase 9 — the master launch.  Brings the whole warehouse stack up in strict
@@ -67,7 +80,7 @@ from moveit_configs_utils import MoveItConfigsBuilder
 
 def gate(name, conditions, timeout=300, period=2):
     """
-    A process that waits for each of `conditions` in turn, then exits 0.
+    Build a process that waits for each of `conditions` in turn, then exits 0.
 
     Each condition is a shell snippet evaluated for its exit status.  Passing
     more than one makes the gate a *sequence*, which is what turns a state
@@ -103,7 +116,7 @@ def gate(name, conditions, timeout=300, period=2):
 
 
 def when_ready(gate_action, name, actions):
-    """OnProcessExit for a gate: run `actions` on success, shut down on failure."""
+    """Register an exit handler: run `actions` on success, shut down on failure."""
     def on_exit(event, context):
         if event.returncode == 0:
             return actions

@@ -16,6 +16,14 @@ setup(
         ('share/' + package_name + '/models', ['models/yolov8n.pt']),
     ],
     install_requires=['setuptools'],
+    # tests_require is here ONLY to make colcon collect the tests, and is NOT
+    # how this package declares its test dependencies — those are <test_depend>
+    # entries in package.xml, which is what rosdep and the build farm read.
+    # Without this line colcon falls back to `setup.py test` (unittest), which
+    # collects nothing from test/ and reports "Ran 0 tests ... OK": a green
+    # `colcon test` that ran no tests at all.
+    tests_require=['pytest'],
+
     zip_safe=True,
     maintainer='zsh',
     maintainer_email='zain.alabidin.shbani@gmail.com',

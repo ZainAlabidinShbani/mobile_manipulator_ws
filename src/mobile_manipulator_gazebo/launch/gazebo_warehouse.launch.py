@@ -1,4 +1,17 @@
 #!/usr/bin/env python3
+# Copyright 2026 Zain Alabidin Shbani
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 # gazebo_warehouse.launch.py
 # ─────────────────────────────────────────────────────────────────────────────
 # Phase 4 — start Gazebo Fortress (gz-sim 6) with the warehouse world and
@@ -83,13 +96,18 @@ def generate_launch_description():
     hold_seconds = LaunchConfiguration('hold_seconds', default='0')
     gui_render_engine = LaunchConfiguration('gui_render_engine', default='ogre2')
 
-    declare_home_x = DeclareLaunchArgument('home_x', default_value='0.0', description='Home pose X [m]')
-    declare_home_y = DeclareLaunchArgument('home_y', default_value='0.0', description='Home pose Y [m]')
-    declare_home_z = DeclareLaunchArgument('home_z', default_value='0.0', description='Home pose Z [m]')
-    declare_home_yaw = DeclareLaunchArgument('home_yaw', default_value='0.0', description='Home pose yaw [rad]')
+    declare_home_x = DeclareLaunchArgument(
+        'home_x', default_value='0.0', description='Home pose X [m]')
+    declare_home_y = DeclareLaunchArgument(
+        'home_y', default_value='0.0', description='Home pose Y [m]')
+    declare_home_z = DeclareLaunchArgument(
+        'home_z', default_value='0.0', description='Home pose Z [m]')
+    declare_home_yaw = DeclareLaunchArgument(
+        'home_yaw', default_value='0.0', description='Home pose yaw [rad]')
     declare_gui = DeclareLaunchArgument(
         'gui', default_value='true',
-        description='Start the gz-sim GUI too. false = headless server, which leaves the cores for sensor rendering.')
+        description='Start the gz-sim GUI too. false = headless server, which '
+                    'leaves the cores for sensor rendering.')
     declare_hold_seconds = DeclareLaunchArgument(
         'hold_seconds', default_value='0',
         description='Seconds home_hold pins cmd_vel to zero before exiting. 0 = hold forever.')
@@ -157,7 +175,8 @@ def generate_launch_description():
         ['xacro',
          os.path.join(description_share, 'urdf', 'mobile_manipulator.urdf.xacro'),
          'sensor_arch:=0', 'use_gazebo:=true',
-         f'controllers_yaml:={os.path.join(description_share, "config", "mobile_manipulator_controllers.yaml")}'],
+         'controllers_yaml:=' + os.path.join(
+             description_share, 'config', 'mobile_manipulator_controllers.yaml')],
         capture_output=True, text=True, check=True)
     urdf_xml = xacro_proc.stdout
     urdf_xml = re.sub(r'<!--.*?-->', '', urdf_xml, flags=re.S)

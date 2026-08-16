@@ -744,6 +744,46 @@
          barriers (x=1.6, y=+-4.6) do not block.  The downward tilt is
          PITCH, not roll: view dir = (cosY cosP, sinY cosP, -sinP).
          ════════════════════════════════════════════════════════════════ -->
+    <!-- ════════════════════════════════════════════════════════════════
+         DEMO CAMERA — world-fixed wide view of BOTH benches.
+
+         Added for the Phase 9 evidence recording.  The full demo has to run
+         with gui:=false (the gz GUI starves the wrist cameras and drags the
+         real-time factor from ~0.9 to ~0.45 on this box), so there is no
+         window to screen-record; and phase4_camera looks at the home pose,
+         not at the benches.  This camera sees the pick bench at (4.5, 0) and
+         the drop bench at (4.5, 3.2) in one frame, so the object can be
+         watched moving from one to the other without a GUI.
+
+         Visual only: static, no collision, and mounted at z = 3.0 — well
+         above the 0.30 m lidar plane, so it is invisible to SLAM, AMCL and
+         both costmaps and cannot perturb any earlier phase's gate.
+         ════════════════════════════════════════════════════════════════ -->
+    <model name="demo_camera">
+      <static>true</static>
+      <pose>0.5 1.6 3.0 0 0.54 0</pose>
+      <link name="link">
+        <sensor name="demo_camera" type="camera">
+          <update_rate>10</update_rate>
+          <always_on>1</always_on>
+          <topic>demo_camera/image_raw</topic>
+          <ignition_frame_id>demo_camera_link</ignition_frame_id>
+          <camera>
+            <horizontal_fov>1.4</horizontal_fov>
+            <image>
+              <width>1280</width>
+              <height>720</height>
+              <format>R8G8B8</format>
+            </image>
+            <clip>
+              <near>0.1</near>
+              <far>100</far>
+            </clip>
+          </camera>
+        </sensor>
+      </link>
+    </model>
+
     <model name="phase4_camera">
       <static>true</static>
       <link name="phase4_camera_link">

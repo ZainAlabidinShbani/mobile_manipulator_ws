@@ -61,7 +61,7 @@ def test_topdown_quaternion_is_a_unit_quaternion():
 
 
 def test_topdown_yaw_spins_the_fingers_about_the_approach_axis():
-    """yaw must rotate the jaws in the horizontal plane, not tilt them."""
+    """Yaw must rotate the jaws in the horizontal plane, not tilt them."""
     straddle_at_zero = tool_axis(topdown_quat(0.0), 0)
     straddle_at_90 = tool_axis(topdown_quat(math.pi / 2), 0)
     # At yaw 0 the fingers straddle along world x; at 90 deg, along world y.

@@ -257,12 +257,27 @@ class WarehouseOrchestrator(Node):
         self.declare_parameter('dry_run_fail_state', '')
         self.declare_parameter('cycles', 1)
         self.declare_parameter('max_retries', 2)
+        # Hard cap on state transitions per cycle.
+        #
+        # max_retries alone cannot bound a cycle: the counter is reset whenever
+        # ANY state succeeds, so a machine that keeps failing GRASP but keeps
+        # succeeding at the PERCEIVE it recovers into never exhausts its budget
+        # and ping-pongs forever.  That is not hypothetical — a run spent over
+        # twenty minutes alternating PERCEIVE -> APPROACH_ARM -> GRASP ->
+        # RECOVERY without ever reaching ABORT.  A cycle that has taken this
+        # many transitions is not going to finish, and saying so is better than
+        # a livelock that looks like progress.
+        self.declare_parameter('max_transitions', 40)
 
         # ── per-state timeouts [s].  Nothing waits longer than these. ────────
         # nav_timeout is generous because the return leg threads the 0.934 m
         # jersey-barrier gate at x = 1.6 east-to-west, which takes far longer
         # than the outbound leg (measured 16.6 m driven for a 2.71 m plan).
-        self.declare_parameter('nav_timeout', 240.0)
+        # Wall clock against a ~0.48 real-time factor, so 240 s of wall clock
+        # bought only ~115 s of simulated driving — not enough for the 3.2 m
+        # drop leg once DWB starts replanning, and NAV_TO_DROP was timing out
+        # while Nav2 was still making progress.
+        self.declare_parameter('nav_timeout', 480.0)
         self.declare_parameter('dock_timeout', 60.0)
         # Wall-clock, and the simulation runs at ~0.48 real time under the
         # full stack, so 40 s of wall clock is only ~19 s of simulated time —
@@ -285,6 +300,17 @@ class WarehouseOrchestrator(Node):
         self.declare_parameter('home_pose', [0.0, 0.0, 0.0])
         self.declare_parameter('pick_dock_pose', [3.24, 0.0, 0.0])
         self.declare_parameter('drop_dock_pose', [3.24, 3.2, 0.0])
+        # Extra clearance the undock backs off BEYOND the Nav2 goal pose.
+        #
+        # Undocking to the nav pose itself is not enough.  AMCL lags the true
+        # pose by 0.2-0.3 m on the approach (measured against gz ground truth:
+        # AMCL 3.12 while the robot is physically at 3.35), so a base that
+        # believes it has reversed to x = 3.00 is really at ~3.30 — still
+        # inside the bench's inflation, where DWB scores every trajectory as
+        # colliding and simply never sets off.  That is the "NAV_TO_DROP sits
+        # still until it times out" failure.  Backing off this much further
+        # puts the robot physically clear regardless of the lag.
+        self.declare_parameter('undock_extra', 0.30)
         self.declare_parameter('nav_frame', 'map')
         self.declare_parameter('odom_frame', 'odom')
         self.declare_parameter('base_frame', 'base_footprint')
@@ -301,6 +327,27 @@ class WarehouseOrchestrator(Node):
         self.declare_parameter('place_point', [3.92, 3.2, 0.633])
         #: thickness of the slab used to model each bench top (see _bench_object)
         self.declare_parameter('bench_slab_thickness', 0.06)
+
+        # ── post-place verification ──────────────────────────────────────────
+        # RELEASE re-observes the object where it was supposed to land, and
+        # fails the state if it is not there.
+        #
+        # This exists because the state machine twice reported a complete
+        # HOME -> ... -> DONE cycle while the object was lying on the floor:
+        # once 3.6 m from the drop bench after AMCL drifted, once flung to
+        # (6.48, 9.41).  Every state had "succeeded" on its own terms — Nav2
+        # reported SUCCEEDED against a wrong pose estimate, the arm executed
+        # its trajectory, the gripper opened — so the trace was worthless as
+        # evidence and only gz ground truth caught it.  A robot may not use
+        # ground truth, but it can look at the bench, which is what this does.
+        self.declare_parameter('verify_place', True)
+        #: how far from the drop zone the object may land and still count [m].
+        #: Generous because a released sphere rolls; what the gate actually
+        #: asks is whether the object ended up ON THE BENCH, which is the box
+        #: test in _verify_place(), not a radius around the aim point.
+        self.declare_parameter('place_tolerance', 0.35)
+        #: how far BELOW the expected height means "it fell off" [m]
+        self.declare_parameter('place_drop_tolerance', 0.10)
 
         # ── arm ──────────────────────────────────────────────────────────────
         self.declare_parameter('planning_group', 'ur5_arm')
@@ -341,8 +388,13 @@ class WarehouseOrchestrator(Node):
         # keeps every joint inside 1.63 rad.
         self.declare_parameter(
             'carry_pose', [-0.3494, -1.5647, 1.5063, 1.6291, 1.5708, 1.2213])
-        #: object centre is released this far above the drop surface
-        self.declare_parameter('release_clearance', 0.015)
+        # Object centre is released this far above the drop surface.
+        #
+        # Small on purpose: these targets are SPHERES, and one released even a
+        # centimetre high bounces and then rolls.  A delivery was measured
+        # ending 0.33 m from the release point — still on the bench, but far
+        # enough out of the verification camera's view to be reported missing.
+        self.declare_parameter('release_clearance', 0.005)
         # Time-stretch applied to Cartesian segments.  See retime().
         #
         # Was 4.0, matching the 25 % velocity scaling the pose goals use, when
@@ -374,6 +426,19 @@ class WarehouseOrchestrator(Node):
         # which is why the controller needs allow_stalling: true, and why
         # "did the knuckle stop inside [0.05, 0.28]" is the grasp check.
         self.declare_parameter('gripper_open', 0.0)
+        # Commanded closing angle.  The jaws physically stall at ~0.21 rad on a
+        # 66 mm ball, so this value sets how hard they squeeze rather than where
+        # they stop: gz_ros2_control tracks a position command with a
+        # proportional velocity command, so the un-achievable remainder is what
+        # becomes grip force.
+        #
+        # 0.30, NOT MORE.  It was briefly raised to 0.38 to stop the object
+        # slipping out during the drive, and that made things far worse: the
+        # extra ~9 mm of commanded interference over-constrains the contact and
+        # DART resolves it explosively.  The object was not dropped, it was
+        # FIRED — recovered at (15.2, -14.0), (10.9, 13.8) and (17.8, 14.0),
+        # i.e. tens of metres away, on three separate runs.  A grip that holds
+        # is a light one.
         self.declare_parameter('gripper_closed', 0.30)
         self.declare_parameter('gripper_effort', 60.0)
         self.declare_parameter('grasp_hold_min', 0.05)
@@ -385,6 +450,7 @@ class WarehouseOrchestrator(Node):
         self.fail_state = str(g('dry_run_fail_state').value).strip().upper()
         self.cycles = int(g('cycles').value)
         self.max_retries = int(g('max_retries').value)
+        self.max_transitions = int(g('max_transitions').value)
 
         self.timeouts = {
             State.NAV_TO_PICK: float(g('nav_timeout').value),
@@ -627,7 +693,7 @@ class WarehouseOrchestrator(Node):
     # motion primitives
     # ══════════════════════════════════════════════════════════════════════
     def _move_goal(self):
-        """A MoveGroup goal with the parts every request shares."""
+        """Build a MoveGroup goal with the parts every request shares."""
         goal = MoveGroup.Goal()
         req = goal.request
         req.group_name = self.get_parameter('planning_group').value
@@ -862,7 +928,9 @@ class WarehouseOrchestrator(Node):
         does not complete, the navigation attempt afterwards is still worth
         making.
         """
-        ok, detail = self._dock_to(xyyaw, f'undock from {what}')
+        extra = float(self.get_parameter('undock_extra').value)
+        back = [float(xyyaw[0]) - extra, float(xyyaw[1]), float(xyyaw[2])]
+        ok, detail = self._dock_to(back, f'undock from {what}')
         level = self.get_logger().info if ok else self.get_logger().warn
         level(f'[UNDOCK] {detail}')
         return ok
@@ -872,6 +940,34 @@ class WarehouseOrchestrator(Node):
         for _ in range(10):
             self.cmd_pub.publish(Twist())
             time.sleep(0.02)
+
+    def _await_target_point(self, frame, timeout):
+        """
+        Wait for a FRESH object_target_frame and return its position in `frame`.
+
+        Freshness is judged by the stamp *advancing*, not by its absolute age:
+        the perception node runs inference and lags /clock by a variable
+        amount, and it simply stops broadcasting when it loses the target — so
+        a stale-but-recent stamp must not count as a live detection.
+        """
+        tgt = self.get_parameter('target_frame').value
+        deadline = time.monotonic() + timeout
+        first_stamp = None
+        while time.monotonic() < deadline:
+            try:
+                tf = self.tf_buffer.lookup_transform(frame, tgt, rclpy.time.Time())
+                stamp = tf.header.stamp.sec + tf.header.stamp.nanosec * 1e-9
+                if first_stamp is None:
+                    first_stamp = stamp
+                elif stamp > first_stamp:
+                    t = tf.transform.translation
+                    return True, (t.x, t.y, t.z), 'live'
+            except (tf2_ros.LookupException, tf2_ros.ConnectivityException,
+                    tf2_ros.ExtrapolationException):
+                pass
+            time.sleep(0.1)
+        seen = 'never appeared' if first_stamp is None else 'stopped advancing'
+        return False, None, f'{tgt} {seen} within {timeout:.0f}s'
 
     def _wait_for_target(self, state):
         """
@@ -891,31 +987,13 @@ class WarehouseOrchestrator(Node):
                 self.grasp_point = (0.60, 0.0, 0.35)     # plausible stand-in
             return ok, detail
 
-        cam = self.get_parameter('camera_frame').value
-        tgt = self.get_parameter('target_frame').value
         odom = self.get_parameter('odom_frame').value
-        timeout = self.timeouts[state]
-        deadline = time.monotonic() + timeout
-        first_stamp = None
-
-        while time.monotonic() < deadline:
-            try:
-                tf = self.tf_buffer.lookup_transform(odom, tgt, rclpy.time.Time())
-                stamp = tf.header.stamp.sec + tf.header.stamp.nanosec * 1e-9
-                if first_stamp is None:
-                    first_stamp = stamp
-                elif stamp > first_stamp:
-                    t = tf.transform.translation
-                    self.grasp_point = (t.x, t.y, t.z)
-                    return True, (f'{tgt} live in {odom} at '
-                                  f'({t.x:+.3f}, {t.y:+.3f}, {t.z:+.3f})')
-            except (tf2_ros.LookupException, tf2_ros.ConnectivityException,
-                    tf2_ros.ExtrapolationException):
-                pass
-            time.sleep(0.1)
-
-        seen = 'never appeared' if first_stamp is None else 'stopped advancing'
-        return False, f'{cam} -> {tgt} {seen} within {timeout:.0f}s'
+        ok, point, detail = self._await_target_point(odom, self.timeouts[state])
+        if not ok:
+            return False, detail
+        self.grasp_point = point
+        return True, (f'{self.get_parameter("target_frame").value} live in {odom} at '
+                      f'({point[0]:+.3f}, {point[1]:+.3f}, {point[2]:+.3f})')
 
     def _gripper(self, state, position, what):
         if self.dry_run:
@@ -926,7 +1004,7 @@ class WarehouseOrchestrator(Node):
         return self._run_action(self.grip_cli, goal, self.timeouts[state], what)
 
     def _grasp_point_in_base(self):
-        """The latched target, re-expressed in base_footprint right now."""
+        """Re-express the latched target in base_footprint right now."""
         if self.grasp_point is None:
             return None
         base = self.get_parameter('base_frame').value
@@ -1096,9 +1174,22 @@ class WarehouseOrchestrator(Node):
                                      'above the drop zone')
         if not ok:
             return False, detail
-        ok, detail = self._cartesian([(place[0], place[1], release_z)],
+
+        # A PLANNED pose goal, not a Cartesian segment.
+        #
+        # The grasp descent has to be a straight line — it lowers open jaws
+        # around a 66 mm ball and any sideways sweep knocks it over.  Setting
+        # the object down has no such constraint: it goes onto a flat, empty
+        # bench top that is already in the planning scene.  Meanwhile the
+        # Cartesian version of this move was the single most common failure in
+        # the whole cycle ("lower onto the drop bench finished with status 6"),
+        # and when it was cancelled mid-descent the object was left swinging
+        # and, twice, flung off the map entirely.  OMPL plans this under the
+        # same 25 % velocity scaling as every other pose goal and does not
+        # depend on per-step IK continuity.
+        ok, detail = self._move_pose((place[0], place[1], release_z),
                                      self.timeouts[State.PLACE_ARM],
-                                     'lower onto the drop bench', avoid_collisions=False)
+                                     'lower onto the drop bench')
         if not ok:
             return False, detail
         return True, f'over the drop zone at ({place[0]:+.3f}, {place[1]:+.3f})'
@@ -1132,12 +1223,66 @@ class WarehouseOrchestrator(Node):
             if not ok:
                 self.get_logger().warn(
                     f'[RELEASE] retract skipped ({rdetail}); stowing from here')
+        verified = 'not verified'
+        if bool(self.get_parameter('verify_place').value):
+            ok, vdetail = self._verify_place()
+            if not ok:
+                return False, vdetail
+            verified = vdetail
+
         ok, sdetail = self._move_joints(self.get_parameter('stow_pose').value,
                                         self.timeouts[State.APPROACH_ARM],
                                         'stow arm for transit')
         if not ok:
             return False, sdetail
-        return True, 'object released, arm stowed'
+        return True, f'object released ({verified}), arm stowed'
+
+    def _verify_place(self):
+        """
+        Look at the drop zone and confirm the object is actually lying there.
+
+        Returns (ok, detail).  This is the only step in the cycle that checks
+        the WORLD rather than the robot's own opinion of it, and it is the
+        difference between DONE meaning "the sequence ran" and DONE meaning
+        "the object was delivered".
+
+        Two things are checked, because the two observed failures looked
+        different: the object must be within place_tolerance of the drop zone
+        horizontally (it has been left metres away when localization drifted),
+        and it must not be place_drop_tolerance below the expected height (it
+        has been left on the floor under a perfectly good drop zone).
+        """
+        base = self.get_parameter('base_frame').value
+        expect = self._map_point_to(base, self.get_parameter('place_point').value)
+        if expect is None:
+            return False, 'cannot verify the place: no map -> base transform'
+
+        ok, detail = self._move_joints(self.get_parameter('look_pose').value,
+                                       self.timeouts[State.APPROACH_ARM],
+                                       'look at the drop zone')
+        if not ok:
+            return False, f'cannot verify the place: {detail}'
+
+        ok, seen, detail = self._await_target_point(
+            base, self.timeouts[State.PERCEIVE])
+        if not ok:
+            return False, f'placed object not visible on the drop bench: {detail}'
+
+        planar = math.hypot(seen[0] - expect[0], seen[1] - expect[1])
+        fell = expect[2] - seen[2]
+        tol = float(self.get_parameter('place_tolerance').value)
+        drop = float(self.get_parameter('place_drop_tolerance').value)
+
+        # Height first, because it is the unambiguous one: an object on the
+        # floor under a perfectly good drop zone is the failure that used to be
+        # reported as DONE.
+        if fell > drop:
+            return False, (f'object sits {fell * 1000:.0f} mm below the drop '
+                           f'surface — it is not on the bench')
+        if planar > tol:
+            return False, (f'object landed {planar * 1000:.0f} mm from the drop '
+                           f'zone (tolerance {tol * 1000:.0f} mm)')
+        return True, f'verified on the bench, {planar * 1000:.0f} mm from the drop zone'
 
     def st_return_home(self):
         if not self.dry_run:
@@ -1167,8 +1312,15 @@ class WarehouseOrchestrator(Node):
         self.failed_state = None
         self._enter(State.HOME)
         self.get_logger().info(f'[STATE] entering {State.HOME.value}')
+        transitions = 0
 
         while True:
+            if transitions >= self.max_transitions:
+                self.get_logger().error(
+                    f'[STATE] ABORT — {transitions} transitions without '
+                    f'completing a cycle; the machine is looping rather than '
+                    f'progressing')
+                self._enter(State.ABORT)
             if self.state is State.ABORT:
                 self.get_logger().error(
                     f'[STATE] ABORT — giving up after {self.retries} retries of '
@@ -1178,6 +1330,7 @@ class WarehouseOrchestrator(Node):
                 self.get_logger().info('[STATE] DONE — cycle complete, back at HOME')
                 return True
 
+            transitions += 1
             if self.state is State.RECOVERY:
                 nxt = self.do_recovery()
                 self._log_transition(State.RECOVERY, nxt)
@@ -1201,6 +1354,23 @@ class WarehouseOrchestrator(Node):
 
     def do_recovery(self):
         """Bounded retry, then ABORT.  Never returns to a blocking wait."""
+        # RELEASE IS NOT RETRYABLE, and retrying it is actively destructive.
+        #
+        # By the time RELEASE can fail, the jaws are already open and the object
+        # is already on the bench — the only step left is the check that it is.
+        # Retrying re-runs the retract and the look-pose move, which sweeps the
+        # arm back over the object it just set down.  Measured: a delivery that
+        # had genuinely landed on the drop bench at (3.786, 3.491, 0.643) was
+        # knocked to (0.612, 7.566, 0.033) on the floor by its own retry, after
+        # the verification produced a false negative because the sphere had
+        # rolled out of the camera's view.  Failing straight to ABORT preserves
+        # the evidence instead of destroying it.
+        if self.failed_state is State.RELEASE:
+            self.get_logger().error(
+                '[RECOV] RELEASE is terminal — the object is already placed, '
+                'and retrying would sweep the arm back over it')
+            return State.ABORT
+
         if self.retries >= self.max_retries:
             self.get_logger().error(
                 f'[RECOV] retry budget ({self.max_retries}) exhausted for '

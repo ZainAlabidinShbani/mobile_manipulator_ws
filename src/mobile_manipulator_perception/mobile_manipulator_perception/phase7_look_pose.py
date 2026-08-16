@@ -8,10 +8,10 @@ phase7_look_pose.py
 The Phase 7 gate wants the robot "parked at the pick table" with the targets
 in view.  Park the base by spawning there:
 
-    ros2 launch mobile_manipulator_gazebo gazebo_warehouse.launch.py home_x:=3.1
+    ros2 launch mobile_manipulator_gazebo gazebo_warehouse.launch.py home_x:=3.24
 
-3.1 m is as close as the base gets: the lidar puck protrudes to x = +0.575 and
-the workbench's near edge is at x = 3.75.  Then run this script to fold the arm
+3.24 m is as close as the base gets: the lidar puck protrudes to x = +0.575 and
+the workbench's near legs stand at x = 3.82.  Then run this script to fold the arm
 out over the bench.
 
 WHY TWO WAYPOINTS, NOT ONE
@@ -70,10 +70,18 @@ ARM_JOINTS = [
 # Elbow up and back — clears the workbench before the arm reaches over it.
 LIFT_POSE = [-0.8342, -2.2000, 0.9000, 0.1002, 0.9323, -0.6261]
 
-# Camera at base_footprint (0.601, -0.176, 1.240) looking (0.947, 0.238, -0.215):
-# 0.85 m from the target cluster, tilted 12 deg down, image level.  Solved
-# against the URDF so all three bench targets project inside the 640x480 frame.
-LOOK_POSE = [-0.8342, -1.0066, -0.2592, 0.1002, 0.9323, -0.6261]
+# RE-SOLVED FOR THE 0.60 m BENCH (Phase 9).  The previous value aimed the
+# camera at a bench top 1.015 m up; those benches were re-authored at 0.600 m
+# because the UR5 cannot reach a target standing on a 1.0 m surface from the
+# closest the base can park (/compute_ik returns NO_IK_SOLUTION beyond 0.45 m
+# at that height).  Aiming the old pose at the new bench frames empty air.
+#
+# Camera at base_footprint (0.20, 0.15, 1.15) looking at (0.68, 0, 0.633):
+# 0.72 m from the target cluster, tilted 45.8 deg down, and IMAGE LEVEL —
+# the optical frame's image-right axis is horizontal to within 0.0 deg, which
+# is the property that matters and is not the same thing as the camera's tilt.
+# Solved with /compute_ik on camera_color_frame and checked by FK on the URDF.
+LOOK_POSE = [-0.6104, -1.8772, 0.2168, 1.4008, 1.2730, -1.4930]
 
 
 class LookPoseSender(Node):
