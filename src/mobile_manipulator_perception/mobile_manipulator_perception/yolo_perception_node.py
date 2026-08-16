@@ -47,7 +47,7 @@ Design notes that are easy to get wrong here
 
   * Depth measures the FRONT SURFACE of the object, not its centroid.
     target_radius_m is added along the view ray to recover the centre, which
-    is what a grasp planner wants.  Default 0.0375 m = the 75 mm warehouse
+    is what a grasp planner wants.  Default 0.033 m = the 66 mm warehouse
     target balls.  Set it to 0.0 for a raw surface point.
 
 Typical use (Gazebo warehouse from Phase 4 already running):
@@ -111,7 +111,7 @@ class YoloPerceptionNode(Node):
         p('target_frame', 'object_target_frame')
         p('broadcast_rate', 10.0)
         p('target_timeout', 1.0)              # s without a detection before TF stops
-        p('target_radius_m', 0.0375)          # front surface -> centroid along the ray
+        p('target_radius_m', 0.033)           # front surface -> centroid along the ray
         p('track_radius', 0.15)               # lock-on radius [m]; 0 = pure highest-confidence
         p('depth_patch', 5)                   # odd px window median-sampled at the box centre
         p('min_depth', 0.10)

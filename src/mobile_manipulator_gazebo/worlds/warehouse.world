@@ -328,11 +328,181 @@
     <include><uri>model://construction_cone</uri><name>cone_se</name><pose>5.5 -5.5 0 0 0 0</pose><static>true</static></include>
 
     <!-- ════════════════════════════════════════════════════════════════
-         PICK-UP WORKBENCH + DROP-OFF TABLE  (model://table, static)
-         Table top surface is 1.5 x 0.8 m at z = 1.0.
+         PICK-UP WORKBENCH + DROP-OFF TABLE
+
+         Hand-authored in Phase 9, replacing <include>model://table</include>.
+         Two changes, both forced by measurement rather than taste:
+
+         HEIGHT 1.015 m -> 0.600 m.  The vendored table put its surface at
+         1.015 m, and the UR5 cannot reach a target standing on it.  The base
+         parks with base_footprint at x = 3.24 (its lidar puck protrudes to
+         x = +0.575 and the near table legs are at x = 3.82), the arm shoulder
+         sits at base_footprint (0.0812, 0, 0.4844), and a top-down grasp needs
+         the tool0 frame 0.115 m above the object.  /compute_ik over the
+         ur5_arm group returns NO_IK_SOLUTION (-31) for every object standing
+         further than 0.45 m in front of the base at z = 1.0525, and the object
+         is 1.01 m away.  At a 0.60 m surface the same query solves out to
+         0.85 m, which covers the whole 0.25 m Nav2 goal tolerance.  This is
+         the Phase 9 root cause, isolated before anything else was touched.
+
+         MATERIAL Ogre script -> PBR.  model://table carries an Ogre
+         <material><script> that Fortress does not implement, so it rendered
+         black and dragged the whole scene's exposure down with it — Phase 7
+         measured target confidence falling from 0.67-0.89 to 0.35.
+
+         The 1.5 x 0.8 top and the four r = 0.02 legs at (+/-0.68, +/-0.38)
+         are copied from model://table verbatim, so the silhouette the 0.30 m
+         lidar plane sees is unchanged and maps/warehouse.pgm stays valid.
          ════════════════════════════════════════════════════════════════ -->
-    <include><uri>model://table</uri><name>pick_workbench</name><pose>4.5 0 0 0 0 0</pose><static>true</static></include>
-    <include><uri>model://table</uri><name>drop_off_table</name><pose>4.5 3.2 0 0 0 0</pose><static>true</static></include>
+    <model name="pick_workbench">
+      <static>true</static>
+      <pose>4.5 0 0 0 0 0</pose>
+      <link name="link">
+        <collision name="surface">
+          <pose>0 0 0.585 0 0 0</pose>
+          <geometry><box><size>1.5 0.8 0.03</size></box></geometry>
+          <surface>
+            <friction><ode><mu>1.0</mu><mu2>1.0</mu2></ode></friction>
+          </surface>
+        </collision>
+        <visual name="surface_visual">
+          <pose>0 0 0.585 0 0 0</pose>
+          <geometry><box><size>1.5 0.8 0.03</size></box></geometry>
+          <material>
+            <ambient>0.42 0.31 0.19 1</ambient>
+            <diffuse>0.72 0.55 0.34 1</diffuse>
+            <specular>0.08 0.08 0.08 1</specular>
+          </material>
+        </visual>
+        <collision name="front_left_leg">
+          <pose>0.68 0.38 0.285 0 0 0</pose>
+          <geometry><cylinder><radius>0.02</radius><length>0.57</length></cylinder></geometry>
+        </collision>
+        <visual name="front_left_leg_visual">
+          <pose>0.68 0.38 0.285 0 0 0</pose>
+          <geometry><cylinder><radius>0.02</radius><length>0.57</length></cylinder></geometry>
+          <material>
+            <ambient>0.22 0.22 0.24 1</ambient>
+            <diffuse>0.45 0.46 0.50 1</diffuse>
+            <specular>0.25 0.25 0.25 1</specular>
+          </material>
+        </visual>
+        <collision name="front_right_leg">
+          <pose>0.68 -0.38 0.285 0 0 0</pose>
+          <geometry><cylinder><radius>0.02</radius><length>0.57</length></cylinder></geometry>
+        </collision>
+        <visual name="front_right_leg_visual">
+          <pose>0.68 -0.38 0.285 0 0 0</pose>
+          <geometry><cylinder><radius>0.02</radius><length>0.57</length></cylinder></geometry>
+          <material>
+            <ambient>0.22 0.22 0.24 1</ambient>
+            <diffuse>0.45 0.46 0.50 1</diffuse>
+            <specular>0.25 0.25 0.25 1</specular>
+          </material>
+        </visual>
+        <collision name="back_left_leg">
+          <pose>-0.68 0.38 0.285 0 0 0</pose>
+          <geometry><cylinder><radius>0.02</radius><length>0.57</length></cylinder></geometry>
+        </collision>
+        <visual name="back_left_leg_visual">
+          <pose>-0.68 0.38 0.285 0 0 0</pose>
+          <geometry><cylinder><radius>0.02</radius><length>0.57</length></cylinder></geometry>
+          <material>
+            <ambient>0.22 0.22 0.24 1</ambient>
+            <diffuse>0.45 0.46 0.50 1</diffuse>
+            <specular>0.25 0.25 0.25 1</specular>
+          </material>
+        </visual>
+        <collision name="back_right_leg">
+          <pose>-0.68 -0.38 0.285 0 0 0</pose>
+          <geometry><cylinder><radius>0.02</radius><length>0.57</length></cylinder></geometry>
+        </collision>
+        <visual name="back_right_leg_visual">
+          <pose>-0.68 -0.38 0.285 0 0 0</pose>
+          <geometry><cylinder><radius>0.02</radius><length>0.57</length></cylinder></geometry>
+          <material>
+            <ambient>0.22 0.22 0.24 1</ambient>
+            <diffuse>0.45 0.46 0.50 1</diffuse>
+            <specular>0.25 0.25 0.25 1</specular>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="drop_off_table">
+      <static>true</static>
+      <pose>4.5 3.2 0 0 0 0</pose>
+      <link name="link">
+        <collision name="surface">
+          <pose>0 0 0.585 0 0 0</pose>
+          <geometry><box><size>1.5 0.8 0.03</size></box></geometry>
+          <surface>
+            <friction><ode><mu>1.0</mu><mu2>1.0</mu2></ode></friction>
+          </surface>
+        </collision>
+        <visual name="surface_visual">
+          <pose>0 0 0.585 0 0 0</pose>
+          <geometry><box><size>1.5 0.8 0.03</size></box></geometry>
+          <material>
+            <ambient>0.42 0.31 0.19 1</ambient>
+            <diffuse>0.72 0.55 0.34 1</diffuse>
+            <specular>0.08 0.08 0.08 1</specular>
+          </material>
+        </visual>
+        <collision name="front_left_leg">
+          <pose>0.68 0.38 0.285 0 0 0</pose>
+          <geometry><cylinder><radius>0.02</radius><length>0.57</length></cylinder></geometry>
+        </collision>
+        <visual name="front_left_leg_visual">
+          <pose>0.68 0.38 0.285 0 0 0</pose>
+          <geometry><cylinder><radius>0.02</radius><length>0.57</length></cylinder></geometry>
+          <material>
+            <ambient>0.22 0.22 0.24 1</ambient>
+            <diffuse>0.45 0.46 0.50 1</diffuse>
+            <specular>0.25 0.25 0.25 1</specular>
+          </material>
+        </visual>
+        <collision name="front_right_leg">
+          <pose>0.68 -0.38 0.285 0 0 0</pose>
+          <geometry><cylinder><radius>0.02</radius><length>0.57</length></cylinder></geometry>
+        </collision>
+        <visual name="front_right_leg_visual">
+          <pose>0.68 -0.38 0.285 0 0 0</pose>
+          <geometry><cylinder><radius>0.02</radius><length>0.57</length></cylinder></geometry>
+          <material>
+            <ambient>0.22 0.22 0.24 1</ambient>
+            <diffuse>0.45 0.46 0.50 1</diffuse>
+            <specular>0.25 0.25 0.25 1</specular>
+          </material>
+        </visual>
+        <collision name="back_left_leg">
+          <pose>-0.68 0.38 0.285 0 0 0</pose>
+          <geometry><cylinder><radius>0.02</radius><length>0.57</length></cylinder></geometry>
+        </collision>
+        <visual name="back_left_leg_visual">
+          <pose>-0.68 0.38 0.285 0 0 0</pose>
+          <geometry><cylinder><radius>0.02</radius><length>0.57</length></cylinder></geometry>
+          <material>
+            <ambient>0.22 0.22 0.24 1</ambient>
+            <diffuse>0.45 0.46 0.50 1</diffuse>
+            <specular>0.25 0.25 0.25 1</specular>
+          </material>
+        </visual>
+        <collision name="back_right_leg">
+          <pose>-0.68 -0.38 0.285 0 0 0</pose>
+          <geometry><cylinder><radius>0.02</radius><length>0.57</length></cylinder></geometry>
+        </collision>
+        <visual name="back_right_leg_visual">
+          <pose>-0.68 -0.38 0.285 0 0 0</pose>
+          <geometry><cylinder><radius>0.02</radius><length>0.57</length></cylinder></geometry>
+          <material>
+            <ambient>0.22 0.22 0.24 1</ambient>
+            <diffuse>0.45 0.46 0.50 1</diffuse>
+            <specular>0.25 0.25 0.25 1</specular>
+          </material>
+        </visual>
+      </link>
+    </model>
 
     <!-- Drop-zone marker on the drop-off table (visual only, no collision) -->
     <model name="drop_zone_marker">
@@ -352,7 +522,7 @@
           </material>
         </visual>
       </link>
-      <pose>4.5 3.2 1.0075 0 0 0</pose>
+      <pose>4.5 3.2 0.6075 0 0 0</pose>
     </model>
 
     <!-- ════════════════════════════════════════════════════════════════
@@ -375,12 +545,24 @@
          hand-fed.  Colour still separates them for a human watching the
          annotated OpenCV window.
 
-         SIZE.  radius 0.0375 m = 75 mm across, inside the Robotiq 2F-85's
-         85 mm stroke, so every target stays graspable in Phase 8.
+         SIZE.  radius 0.033 m = 66 mm across (Phase 7 used 75 mm).  The
+         2F-85 opens to 85 mm, so 75 mm left only 5 mm of clearance per pad
+         — less than the combined perception, execution and localization
+         error, so a descending gripper knocks the ball off the bench
+         instead of straddling it.  66 mm doubles that margin to 9.5 mm and
+         is still large enough to read as COCO "sports ball".  The matching
+         knuckle angle for contact is 0.175 rad; the orchestrator commands
+         0.24 rad, i.e. a few mm of interference (gripper_closed).
 
-         HEIGHT.  The pick_workbench top surface is at z = 1.015 (not the
-         1.0 the table model's nominal size suggests), so a resting ball
-         centre sits at 1.015 + 0.0375 = 1.0525.
+         HEIGHT.  The Phase 9 workbench top surface is at z = 0.600, so a
+         resting ball centre sits at 0.600 + 0.033 = 0.633.  (Phase 7 had
+         1.015 + 0.0375 = 1.0525, which is outside the UR5's envelope from
+         the closest the base can park — see the workbench comment above.)
+
+         PLACEMENT.  x = 3.92 puts them 0.17 m in from the bench's near
+         edge, i.e. 0.68 m in front of a base parked at x = 3.24, which is
+         inside the reachable band (0.45-0.85 m) with room for the 0.25 m
+         Nav2 goal tolerance either way.
 
          These are <model> poses, i.e. WORLD coordinates — they are NOT
          relative to pick_workbench.  Each x therefore carries the
@@ -391,20 +573,20 @@
       <static>false</static>
       <link name="body">
         <inertial>
-          <mass>0.35</mass>
+          <mass>0.2</mass>
           <inertia>
-            <ixx>0.000197</ixx>
+            <ixx>0.0000871</ixx>
             <ixy>0.0</ixy>
             <ixz>0.0</ixz>
-            <iyy>0.000197</iyy>
+            <iyy>0.0000871</iyy>
             <iyz>0.0</iyz>
-            <izz>0.000197</izz>
+            <izz>0.0000871</izz>
           </inertia>
         </inertial>
         <collision name="collision">
           <geometry>
             <sphere>
-              <radius>0.0375</radius>
+              <radius>0.033</radius>
             </sphere>
           </geometry>
           <surface>
@@ -419,7 +601,7 @@
         <visual name="visual">
           <geometry>
             <sphere>
-              <radius>0.0375</radius>
+              <radius>0.033</radius>
             </sphere>
           </geometry>
           <material>
@@ -429,27 +611,27 @@
           </material>
         </visual>
       </link>
-      <pose>4.25 0.12 1.0525 0 0 0</pose>
+      <pose>3.92 -0.26 0.6330 0 0 0</pose>
     </model>
 
     <model name="target_ball_blue">
       <static>false</static>
       <link name="body">
         <inertial>
-          <mass>0.35</mass>
+          <mass>0.2</mass>
           <inertia>
-            <ixx>0.000197</ixx>
+            <ixx>0.0000871</ixx>
             <ixy>0.0</ixy>
             <ixz>0.0</ixz>
-            <iyy>0.000197</iyy>
+            <iyy>0.0000871</iyy>
             <iyz>0.0</iyz>
-            <izz>0.000197</izz>
+            <izz>0.0000871</izz>
           </inertia>
         </inertial>
         <collision name="collision">
           <geometry>
             <sphere>
-              <radius>0.0375</radius>
+              <radius>0.033</radius>
             </sphere>
           </geometry>
           <surface>
@@ -464,7 +646,7 @@
         <visual name="visual">
           <geometry>
             <sphere>
-              <radius>0.0375</radius>
+              <radius>0.033</radius>
             </sphere>
           </geometry>
           <material>
@@ -474,27 +656,27 @@
           </material>
         </visual>
       </link>
-      <pose>4.55 -0.22 1.0525 0 0 0</pose>
+      <pose>3.92 0.26 0.6330 0 0 0</pose>
     </model>
 
     <model name="target_ball_green">
       <static>false</static>
       <link name="body">
         <inertial>
-          <mass>0.35</mass>
+          <mass>0.2</mass>
           <inertia>
-            <ixx>0.000197</ixx>
+            <ixx>0.0000871</ixx>
             <ixy>0.0</ixy>
             <ixz>0.0</ixz>
-            <iyy>0.000197</iyy>
+            <iyy>0.0000871</iyy>
             <iyz>0.0</iyz>
-            <izz>0.000197</izz>
+            <izz>0.0000871</izz>
           </inertia>
         </inertial>
         <collision name="collision">
           <geometry>
             <sphere>
-              <radius>0.0375</radius>
+              <radius>0.033</radius>
             </sphere>
           </geometry>
           <surface>
@@ -509,7 +691,7 @@
         <visual name="visual">
           <geometry>
             <sphere>
-              <radius>0.0375</radius>
+              <radius>0.033</radius>
             </sphere>
           </geometry>
           <material>
@@ -519,7 +701,7 @@
           </material>
         </visual>
       </link>
-      <pose>4.72 0.18 1.0525 0 0 0</pose>
+      <pose>3.92 0.00 0.6330 0 0 0</pose>
     </model>
 
     <!-- ════════════════════════════════════════════════════════════════
@@ -562,6 +744,46 @@
          barriers (x=1.6, y=+-4.6) do not block.  The downward tilt is
          PITCH, not roll: view dir = (cosY cosP, sinY cosP, -sinP).
          ════════════════════════════════════════════════════════════════ -->
+    <!-- ════════════════════════════════════════════════════════════════
+         DEMO CAMERA — world-fixed wide view of BOTH benches.
+
+         Added for the Phase 9 evidence recording.  The full demo has to run
+         with gui:=false (the gz GUI starves the wrist cameras and drags the
+         real-time factor from ~0.9 to ~0.45 on this box), so there is no
+         window to screen-record; and phase4_camera looks at the home pose,
+         not at the benches.  This camera sees the pick bench at (4.5, 0) and
+         the drop bench at (4.5, 3.2) in one frame, so the object can be
+         watched moving from one to the other without a GUI.
+
+         Visual only: static, no collision, and mounted at z = 3.0 — well
+         above the 0.30 m lidar plane, so it is invisible to SLAM, AMCL and
+         both costmaps and cannot perturb any earlier phase's gate.
+         ════════════════════════════════════════════════════════════════ -->
+    <model name="demo_camera">
+      <static>true</static>
+      <pose>0.5 1.6 3.0 0 0.54 0</pose>
+      <link name="link">
+        <sensor name="demo_camera" type="camera">
+          <update_rate>10</update_rate>
+          <always_on>1</always_on>
+          <topic>demo_camera/image_raw</topic>
+          <ignition_frame_id>demo_camera_link</ignition_frame_id>
+          <camera>
+            <horizontal_fov>1.4</horizontal_fov>
+            <image>
+              <width>1280</width>
+              <height>720</height>
+              <format>R8G8B8</format>
+            </image>
+            <clip>
+              <near>0.1</near>
+              <far>100</far>
+            </clip>
+          </camera>
+        </sensor>
+      </link>
+    </model>
+
     <model name="phase4_camera">
       <static>true</static>
       <link name="phase4_camera_link">

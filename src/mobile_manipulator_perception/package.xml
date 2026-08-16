@@ -41,4 +41,17 @@
   <export>
     <build_type>ament_python</build_type>
   </export>
+  <!-- Phase 10: launch_testing integration test (test/test_perception_tf.py).
+       Declared here, not as tests_require in setup.py, which colcon ignores. -->
+  <test_depend>launch_testing</test_depend>
+  <test_depend>launch_testing_ros</test_depend>
+  <test_depend>python3-pytest</test_depend>
+  <test_depend>rclpy</test_depend>
+  <test_depend>tf2_ros</test_depend>
+  <!-- NOT a <test_depend>mobile_manipulator_gazebo</test_depend>, even though
+       test_perception_tf.py includes that package's launch file: gazebo
+       already exec_depends on this package (warehouse_demo.launch.py starts
+       the detector), so declaring it here makes the dependency graph circular
+       and colcon refuses to build.  The test resolves the launch file through
+       the ament index at run time instead. -->
 </package>

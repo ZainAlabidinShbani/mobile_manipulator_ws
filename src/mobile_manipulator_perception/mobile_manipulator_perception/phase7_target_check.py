@@ -47,18 +47,6 @@ from rclpy.node import Node
 DEFAULT_MODEL = 'mobile_manipulator'
 
 
-def quat_to_matrix(x, y, z, w):
-    n = math.sqrt(x * x + y * y + z * z + w * w)
-    if n == 0.0:
-        return np.eye(3)
-    x, y, z, w = x / n, y / n, z / n, w / n
-    return np.array([
-        [1 - 2 * (y * y + z * z), 2 * (x * y - z * w), 2 * (x * z + y * w)],
-        [2 * (x * y + z * w), 1 - 2 * (x * x + z * z), 2 * (y * z - x * w)],
-        [2 * (x * z - y * w), 2 * (y * z + x * w), 1 - 2 * (x * x + y * y)],
-    ])
-
-
 # Gazebo Fortress ground truth.
 #
 # MIGRATION NOTE: Classic's `gz model -m <name> -p` printed "x y z r p y" and

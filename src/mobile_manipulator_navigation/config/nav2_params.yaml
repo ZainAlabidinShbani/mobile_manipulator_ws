@@ -34,11 +34,36 @@ amcl:
     base_frame_id: "base_footprint"
     scan_topic: scan
     robot_model_type: "nav2_amcl::DifferentialMotionModel"
-    # Skid-steer slip → rotation odometry is the least trustworthy input
-    alpha1: 0.3
-    alpha2: 0.2
-    alpha3: 0.15
-    alpha4: 0.2
+    # Skid-steer slip → rotation odometry is the least trustworthy input.
+    #
+    # RAISED IN PHASE 9, and alpha4 is the one that matters.  Phase 6 only ever
+    # gated a straight-line goal, so the base's worst habit never showed up:
+    # an in-place turn drags four fixed wheels sideways and walks the body
+    # ~0.12 m per radian, which is ~0.19 m of pure lateral displacement for the
+    # 90 deg turn onto the drop-bench leg.  A DifferentialMotionModel has no
+    # lateral term at all, so that motion is not merely mis-measured, it is
+    # structurally unobservable to odometry — the filter has to recover it from
+    # the laser or not at all.
+    #
+    # Measured with the old values (loc_log, AMCL vs gz ground truth, sampled
+    # 2 Hz through one cycle): error was 0.18 m entering the turn, 0.44 m
+    # immediately after it, and grew monotonically to 0.77 m and beyond while
+    # AMCL insisted the robot was driving north and it was actually going
+    # south.  Nav2 then failed to plan, ran Spin recoveries ("Collision Ahead -
+    # Exiting Spin"), and each spin injected more of the same error until the
+    # estimate was ~4 m out and PLACE_ARM set the object down on bare floor
+    # while every log line still said success.
+    #
+    # alpha4 is translation noise caused by rotation — the exact term for
+    # "turning moves the body in a way the wheels do not report".  Widening it
+    # lets the particle cloud actually cover the true pose after a turn so the
+    # likelihood field can pick it out; alpha1 widens heading spread for the
+    # same reason.  Over-wide is cheap here (2000 particles, a static
+    # warehouse); too narrow is what diverges.
+    alpha1: 0.6
+    alpha2: 0.4
+    alpha3: 0.3
+    alpha4: 0.6
     alpha5: 0.2
     beam_skip_distance: 0.5
     beam_skip_error_threshold: 0.9

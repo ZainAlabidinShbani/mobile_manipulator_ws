@@ -1,4 +1,17 @@
 #!/usr/bin/env python3
+# Copyright 2026 Zain Alabidin Shbani
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 import argparse
 import time
 
@@ -75,12 +88,29 @@ def main():
     node = HomeHold()
     parser = argparse.ArgumentParser()
     parser.add_argument("--no-stow", action="store_true")
+    # --hold-seconds exists for the Phase 9 master launch.  home_hold pins
+    # cmd_vel to zero at 50 Hz, which fights Nav2's controller_server, so the
+    # standing advice is `pkill -f "[h]ome_hold"` before sending goals.  Inside
+    # a launch file that is both racy and dangerous (the pattern matches the
+    # whole command line, so a pkill can kill the shell that issued it), so
+    # warehouse_demo.launch.py gives it a finite hold instead and chains the
+    # rest of the stack off its exit with an OnProcessExit handler.
+    # 0 keeps the original behaviour: hold forever.
+    parser.add_argument("--hold-seconds", type=float, default=0.0)
     args, _ = parser.parse_known_args()
     ok = True
     if not args.no_stow:
         ok = node.stow()
     if ok:
-        rclpy.spin(node)
+        if args.hold_seconds > 0.0:
+            deadline = time.monotonic() + args.hold_seconds
+            node.get_logger().info(
+                f"holding zero cmd_vel for {args.hold_seconds:.0f}s, then exiting")
+            while rclpy.ok() and time.monotonic() < deadline:
+                rclpy.spin_once(node, timeout_sec=0.1)
+            node.get_logger().info("hold finished, releasing the base")
+        else:
+            rclpy.spin(node)
     node.destroy_node()
     rclpy.shutdown()
 
